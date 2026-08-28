@@ -161,8 +161,7 @@
   #flipbook .tpage.odd .sheet--text { padding-right:5%; }
   #flipbook .tpage.even .sheet--text { padding-left:5%; }
   #flipbook { pointer-events:auto; }
-  #gf-swipe-overlay { pointer-events:none!important; }
-  body.gf-reading-full #gf-swipe-overlay{
+  #gf-swipe-overlay{
     pointer-events:auto!important;
     touch-action:none!important;
     background:transparent!important;
@@ -267,7 +266,7 @@
       var patchedAnimatef = function(point){
         if(point && point.turning){
           // Successful turn after release.
-          point.duration = 920;
+          point.duration = 760;
           point.easing = function(x, t, b, c, d){
             var p = Math.max(0, Math.min(1, t/d));
             p = p*p*(3 - 2*p); // smoothstep
@@ -275,7 +274,7 @@
           };
         }else if(point && point.hiding){
           // Page settling back when the pull did not commit.
-          point.duration = 650;
+          point.duration = 520;
           point.easing = function(x, t, b, c, d){
             var p = Math.max(0, Math.min(1, t/d));
             p = 0.5 - 0.5*Math.cos(Math.PI*p);
@@ -1202,7 +1201,7 @@
         width: folded ? FOLDED_W : UNFOLDED_W,
         height: folded ? FOLDED_H : UNFOLDED_H,
         display: folded ? 'single' : 'double',
-        duration: reduced ? 1 : 920,
+        duration: reduced ? 1 : 760,
         acceleration: true,
         gradients: true,
         elevation: 50,
@@ -1256,7 +1255,7 @@
           var d = $page.data();
           if(d && d.f && d.f.opts){
             d.f.opts.cornerSize = cornerSize;
-            d.f.opts.duration = reduced ? 1 : 920;
+            d.f.opts.duration = reduced ? 1 : 760;
           }
         }catch(e){}
       }
@@ -1519,11 +1518,11 @@
     // corner into Turn.js while retaining its real page-curl physics.
     var quadrantOverlay = document.getElementById('gf-swipe-overlay');
     var quadrantGesture = null;
-    var COMMIT_DRAG_PX = 1.5; // essentially any intentional horizontal motion commits
-    var DRAG_GAIN_X = 8.0;     // tiny finger movement creates a much larger virtual pull
+    var COMMIT_DRAG_PX = 0.75; // a barely perceptible intentional horizontal motion commits
+    var DRAG_GAIN_X = 12.0;    // tiny finger movement creates a very large virtual pull
     var DRAG_GAIN_Y = 2.0;
     var INITIAL_CURL_PX = 18;  // visible corner grab immediately on touch
-    var AUTO_PULL_RATIO = 0.42; // once committed, jump curl ~42% across the page
+    var AUTO_PULL_RATIO = 0.58; // once committed, jump curl well past the page midpoint
     var TOOLBAR_STRIP_PX = 30; // nearly the entire page surface is a turn target
 
     function pageForQuadrant(wantRight){
@@ -1557,7 +1556,7 @@
     }
 
     function beginQuadrantTurn(e){
-      if(!readingMode || !quadrantOverlay || !flipEl) return false;
+      if(!quadrantOverlay || !flipEl) return false;
 
       var r = quadrantOverlay.getBoundingClientRect();
 
@@ -1682,8 +1681,8 @@
         var totalDx = g.lastX-g.startX;
         var totalDy = g.lastY-g.startY;
         var tinyHorizontalIntent =
-          Math.abs(totalDx) >= 2 &&
-          Math.abs(totalDx) >= Math.abs(totalDy)*0.35;
+          Math.abs(totalDx) >= 1 &&
+          Math.abs(totalDx) >= Math.abs(totalDy)*0.25;
 
         if(!cancelled && (g.committed || tinyHorizontalIntent)){
           // Gatefold owns the commitment threshold. Turn.js only performs the
@@ -2030,6 +2029,15 @@
       openToolbar();
     });
 
+    // Toolbar controls must never be interpreted as page gestures.
+    if(toolbarEl){
+      ['pointerdown','pointermove','pointerup','touchstart','touchmove','touchend'].forEach(function(type){
+        toolbarEl.addEventListener(type, function(e){
+          e.stopPropagation();
+        }, {passive:false});
+      });
+    }
+
     toolbarClose.addEventListener('click', closeToolbar);
 
     toolbarGo.addEventListener('click', function(){
@@ -2109,38 +2117,100 @@
     });
 
     function applyFontScale(){
+      // Save the CURRENT reading position before repagination.
+      // Font changes alter page count, so use both raw page and proportional
+      // position to get back to essentially the same text afterward.
+      var beforePage = 1;
+      var beforePages = 1;
+      var beforeRatio = 0;
+
+      try{
+        if(flipEl && flipEl.length){
+          beforePage = flipEl.turn('page') || 1;
+          beforePages = flipEl.turn('pages') || 1;
+          beforeRatio = beforePages > 1
+            ? (beforePage - 1) / (beforePages - 1)
+            : 0;
+        }
+      }catch(e){}
+
+      // Save progress BEFORE rebuilding instead of afterward.
+      saveCurrentProgress();
+
       document.documentElement.style.setProperty('--gf-user-font-scale', fontScale);
+
       var style = document.getElementById('gf-font-scale-style');
       if(!style){
         style = document.createElement('style');
         style.id = 'gf-font-scale-style';
         document.head.appendChild(style);
       }
+
       var userFontPx = +(13 * fontScale).toFixed(2);
-      style.textContent = '.gf-root .para{font-size:'+userFontPx+'px!important;}';
+      style.textContent =
+        '.gf-root .para{font-size:'+userFontPx+'px!important;}';
+
       if(currentSource){
-        if(measureEl){ try{measureEl.remove();}catch(e){} measureEl=null; }
+        if(measureEl){
+          try{ measureEl.remove(); }catch(e){}
+          measureEl = null;
+        }
+
         buildBookFromParagraphs(
           currentSource.paragraphs,
           currentSource.title,
           currentSource.author,
           currentSource.chapterLabelOverride
         );
+
+        // buildBookFromParagraphs creates a fresh Turn.js instance whose
+        // default is page 1. Restore the user's reading position AFTER the
+        // fresh pagination exists.
+        var restoreAfterFontChange = function(){
+          try{
+            if(!flipEl || !flipEl.length) return;
+
+            var afterPages = flipEl.turn('pages') || 1;
+            var target;
+
+            // If page count happened not to change, restore exact page.
+            if(afterPages === beforePages){
+              target = beforePage;
+            }else{
+              // Otherwise restore the equivalent proportional location.
+              target = 1 + Math.round(beforeRatio * Math.max(0, afterPages - 1));
+            }
+
+            target = Math.max(1, Math.min(afterPages, target));
+            flipEl.turn('page', target);
+
+            updateChrome();
+            syncBookmarkButton();
+            saveCurrentProgress();
+          }catch(e){}
+        };
+
+        requestAnimationFrame(function(){
+          requestAnimationFrame(restoreAfterFontChange);
+        });
+        setTimeout(restoreAfterFontChange, 90);
       }
     }
 
-    fontUpBtn.addEventListener('click', function(){
+    fontUpBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
       fontScale = Math.min(1.45, +(fontScale+.08).toFixed(2));
       applyFontScale();
       saveAppSettings();
-      saveCurrentProgress();
     });
 
-    fontDownBtn.addEventListener('click', function(){
+    fontDownBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
       fontScale = Math.max(.78, +(fontScale-.08).toFixed(2));
       applyFontScale();
       saveAppSettings();
-      saveCurrentProgress();
     });
 
     themeBtn.addEventListener('click', function(){
@@ -2239,4 +2309,4 @@
     boot();
   }
 })();
-</script>
+      </script>
