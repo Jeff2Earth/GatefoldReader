@@ -166,6 +166,9 @@
     touch-action:none!important;
     background:transparent!important;
     cursor:grab;
+    user-select:none!important;
+    -webkit-user-select:none!important;
+    -webkit-touch-callout:none!important;
   }
 
   #gf-prev-btn:disabled, #gf-next-btn:disabled { opacity:.3; cursor:default; }
@@ -1527,12 +1530,12 @@
     // corner into Turn.js while retaining its real page-curl physics.
     var quadrantOverlay = document.getElementById('gf-swipe-overlay');
     var quadrantGesture = null;
-    var COMMIT_DRAG_PX = 0.65; // even lighter intentional movement latches the turn
+    var COMMIT_DRAG_PX = 0.35; // almost imperceptible intentional movement latches the turn
     var DRAG_GAIN_X = 16.0;    // very short finger travel produces a strong page pull
     var DRAG_GAIN_Y = 1.0;
     var INITIAL_CURL_PX = 22;  // visible grab immediately on touch
     var AUTO_PULL_RATIO = 0.82; // latched turn continues most of the way across automatically
-    var TOOLBAR_STRIP_PX = 8; // leave only a very thin top strip; nearly all page area can start a turn
+    var TOOLBAR_STRIP_PX = 0; // full reader surface is eligible; toolbar itself is layered above us
     var AUTO_GLIDE_MS = 170;   // smooth continuation after the tiny swipe commits
 
     function pageForQuadrant(wantRight){
@@ -1570,9 +1573,9 @@
 
       var r = quadrantOverlay.getBoundingClientRect();
 
-      // Preserve the top pull-down toolbar. Everything below this narrow strip
-      // belongs to page turning.
-      if((e.clientY-r.top) <= TOOLBAR_STRIP_PX){
+      // The toolbar and pull-down handle are physically layered far above this
+      // overlay, so the reader itself can use its entire surface.
+      if((e.clientY-r.top) < TOOLBAR_STRIP_PX){
         return false;
       }
 
@@ -1592,26 +1595,18 @@
         var ph = $page.height();
         var inset = 7;
 
-        // Start Turn.js at the ACTUAL chosen page corner, regardless of where
-        // the user's finger is located on that quadrant.
         var sx = parentOffset.left + (wantRight ? pw-inset : inset);
-        var sy = parentOffset.top  + (wantBottom ? ph-inset : inset);
 
-        $page.flip('_eventStart', syntheticTouchEvent(sx,sy));
-
-        // Start Turn.js using the required logical corner, but immediately
-        // move the visible fold to the SAME vertical level as the user's
-        // actual finger. This keeps the giant grab area while making the curl
-        // appear where the user is really pulling instead of up/down in the
-        // literal corner.
+        // Keep the eventual curl at the vertical level where the finger began.
         var touchY = Math.max(
           parentOffset.top + 14,
           Math.min(parentOffset.top + ph - 14, e.pageY)
         );
 
-        var initialX = sx + (wantRight ? -INITIAL_CURL_PX : INITIAL_CURL_PX);
-        $page.flip('_eventMove', syntheticTouchEvent(initialX,touchY));
-
+        // IMPORTANT: pointer-down only ARMS Gatefold. We intentionally do NOT
+        // call Turn.js _eventStart yet. This removes Turn.js's internal
+        // press-duration from the equation, so the user can hold here for as
+        // long as desired and then make a tiny stroke.
         quadrantGesture = {
           pointerId:e.pointerId,
           page:$page,
@@ -1627,7 +1622,8 @@
           pageW:pw,
           pageH:ph,
           committed:false,
-          autoPulled:false
+          activated:false,
+          finished:false
         };
 
         try{ quadrantOverlay.setPointerCapture(e.pointerId); }catch(err){}
@@ -1636,6 +1632,33 @@
         return true;
       }catch(err){
         quadrantGesture = null;
+        return false;
+      }
+    }
+
+    function activateArmedTurn(g, dx, dy){
+      if(!g || g.activated) return true;
+
+      try{
+        // Start a FRESH Turn.js gesture only when the finger actually decides
+        // to move. A long stationary hold therefore never becomes "stale".
+        g.page.flip(
+          '_eventStart',
+          syntheticTouchEvent(g.virtualStartX, g.virtualStartY)
+        );
+
+        var initialX = g.virtualStartX +
+          (g.wantRight ? -INITIAL_CURL_PX : INITIAL_CURL_PX);
+
+        g.page.flip(
+          '_eventMove',
+          syntheticTouchEvent(initialX, g.virtualStartY)
+        );
+
+        g.lastVirtualX = initialX;
+        g.activated = true;
+        return true;
+      }catch(err){
         return false;
       }
     }
@@ -1685,9 +1708,45 @@
       var dx = e.clientX-g.startX;
       var dy = e.clientY-g.startY;
 
-      // Map a tiny physical movement into a much larger virtual pull from the
-      // chosen page corner. This means the finger no longer has to travel
-      // anywhere near the opposite-page territory.
+      var correctDirection =
+        (g.wantRight && dx <= -COMMIT_DRAG_PX) ||
+        (!g.wantRight && dx >= COMMIT_DRAG_PX);
+
+      // Do nothing while the finger is simply resting. The entire gesture is
+      // still armed, no matter how long the user holds.
+      if(!g.activated){
+        if(!correctDirection){
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        if(!activateArmedTurn(g,dx,dy)){
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        // The very first tiny intentional stroke is enough to commit.
+        g.committed = true;
+
+        var firstVX = g.virtualStartX + dx * DRAG_GAIN_X;
+        var firstVY = g.virtualStartY + dy * DRAG_GAIN_Y;
+
+        try{
+          g.page.flip('_eventMove', syntheticTouchEvent(firstVX,firstVY));
+          g.lastVirtualX = firstVX;
+        }catch(err){}
+
+        startLatchedAutoPull(g);
+
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      // Once active, keep the visible curl following the finger while the
+      // existing latched auto-glide continues to carry the page across.
       var vx = g.virtualStartX + dx * DRAG_GAIN_X;
       var vy = g.virtualStartY + dy * DRAG_GAIN_Y;
 
@@ -1695,17 +1754,6 @@
         g.page.flip('_eventMove', syntheticTouchEvent(vx,vy));
         g.lastVirtualX = vx;
       }catch(err){}
-
-      // A tiny movement in the natural page-turn direction LATCHES the turn.
-      // After that point the page continues by itself; the user does not need
-      // to drag halfway across the display.
-      if((g.wantRight && dx <= -COMMIT_DRAG_PX) ||
-         (!g.wantRight && dx >= COMMIT_DRAG_PX)){
-        if(!g.committed){
-          g.committed = true;
-          startLatchedAutoPull(g);
-        }
-      }
 
       e.preventDefault();
       e.stopPropagation();
@@ -1718,27 +1766,22 @@
       quadrantGesture = null;
 
       try{
-        var totalDx = g.lastX-g.startX;
-        var totalDy = g.lastY-g.startY;
+        // A stationary press/hold never started Turn.js, so there is nothing
+        // to retract and no visual "page goes back" behavior.
+        if(!g.activated){
+          g.finished = true;
+        }else{
+          var totalDx = g.lastX-g.startX;
+          var totalDy = g.lastY-g.startY;
 
-        var directionalIntent =
-          (g.wantRight ? totalDx < 0 : totalDx > 0) &&
-          Math.abs(totalDx) >= COMMIT_DRAG_PX &&
-          Math.abs(totalDx) >= Math.abs(totalDy)*0.12;
+          // Once activation happened, Gatefold has already accepted the tiny
+          // directional stroke. Android pointercancel/lost capture cannot undo it.
+          g.finished = true;
 
-        // IMPORTANT: Android/Chrome can emit pointercancel near a screen edge.
-        // Once Gatefold has latched a deliberate turn, pointercancel must NOT
-        // send the page back. A latched gesture always finishes.
-        var shouldFinish = g.committed || directionalIntent;
+          if(g.autoPullRaf){
+            try{ cancelAnimationFrame(g.autoPullRaf); }catch(e){}
+          }
 
-        g.finished = true;
-        if(g.autoPullRaf){
-          try{ cancelAnimationFrame(g.autoPullRaf); }catch(e){}
-        }
-
-        if(shouldFinish){
-          // Push the fold very near the far side before handing off to Turn.js.
-          // This makes a tiny physical swipe behave like a completed pull.
           var finishX = g.virtualStartX +
             (g.wantRight ? -1 : 1) * (g.pageW * 0.90);
           var finishY = g.virtualStartY + totalDy * DRAG_GAIN_Y;
@@ -1747,31 +1790,21 @@
             g.page.flip('_eventMove', syntheticTouchEvent(finishX,finishY));
           }catch(e){}
 
-          // Use Turn.js only for the final curl animation. Gatefold, not
-          // Turn.js, has already decided that the page must turn.
           try{
             g.page.flip('turnPage', g.corner);
           }catch(e){
-            // Public-book-level fallback: guarantees the page advances even
-            // if a private Turn.js page method rejects an edge-case gesture.
             try{
               if(g.wantRight) flipEl.turn('next');
               else flipEl.turn('previous');
             }catch(e2){}
           }
-        }else{
-          // A true tap/no-drag returns the page; nothing else does.
-          g.page.flip('hideFoldedPage', true);
         }
       }catch(err){
-        // Last-resort public API fallback for a latched turn.
-        if(g && g.committed){
+        if(g && g.activated){
           try{
             if(g.wantRight) flipEl.turn('next');
             else flipEl.turn('previous');
           }catch(err2){}
-        }else{
-          try{ g.page.flip('_eventEnd'); }catch(err3){}
         }
       }
 
@@ -1784,6 +1817,17 @@
     }
 
     if(quadrantOverlay){
+      quadrantOverlay.addEventListener('contextmenu', function(e){
+        // Keep a long press armed for page turning instead of letting Android
+        // convert it into a browser context-menu gesture.
+        e.preventDefault();
+        e.stopPropagation();
+      }, {passive:false});
+
+      quadrantOverlay.addEventListener('dragstart', function(e){
+        e.preventDefault();
+      }, {passive:false});
+
       quadrantOverlay.addEventListener('pointerdown', function(e){
         beginQuadrantTurn(e);
       }, {passive:false});
@@ -2610,4 +2654,4 @@
     boot();
   }
 })();
-</script>
+  </script>
