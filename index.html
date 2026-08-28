@@ -1791,28 +1791,37 @@
     prevBtn.addEventListener('click', function(){ flipEl.turn('previous'); });
     nextBtn.addEventListener('click', function(){ flipEl.turn('next'); });
     foldBtn.addEventListener('click', function(){
+      // Capture the LIVE reading position before changing single/double-page
+      // geometry. Otherwise the freshly rebuilt Turn.js book starts at page 1.
+      var foldSnapshot = captureReadingSnapshot();
+
+      // Save the old location first, then block temporary page-1 saves while
+      // the book is being repaginated.
+      saveCurrentProgress();
+      suppressProgressSave = true;
+
       folded = !folded;
-      computeResponsiveSizes();
 
       foldIcon.textContent = folded ? '\u2707' : '\u25A3';
       foldLabel.textContent = folded ? 'Unfold' : 'Fold';
-      foldBtn.setAttribute('aria-label', folded ? 'Unfold to two-page view' : 'Fold to single-page view');
-      playFoldSound();
+      foldBtn.setAttribute(
+        'aria-label',
+        folded ? 'Unfold to two-page view' : 'Fold to single-page view'
+      );
 
-      // Re-paginate to the actual physical size instead of stretching old pages.
-      if(currentSource){
-        if(measureEl){ try{ measureEl.remove(); }catch(e){} measureEl = null; }
-        buildBookFromParagraphs(
-          currentSource.paragraphs,
-          currentSource.title,
-          currentSource.author,
-          currentSource.chapterLabelOverride
-        );
-      }else{
-        applyDisplay();
-      }
+      playFoldSound();
       saveAppSettings();
-      saveCurrentProgress();
+
+      // Use the SAME controlled rebuild/restore path as orientation changes.
+      // It repaginates for the new fold geometry and restores the equivalent
+      // reading location instead of leaving the new book on its cover.
+      if(currentSource){
+        applyReadingMode(foldSnapshot);
+      }else{
+        computeResponsiveSizes();
+        applyDisplay();
+        suppressProgressSave = false;
+      }
     });
     soundBtn.addEventListener('click', function(){
       soundOn = !soundOn;
