@@ -51,6 +51,8 @@
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Go</button>
       <button id="gf-toolbar-load" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Load Book</button>
+      <button id="gf-toolbar-bookmark" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
+        background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Bookmark</button>
       <button id="gf-font-down" aria-label="Decrease font size" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:var(--gilt);">A−</button>
       <button id="gf-font-up" aria-label="Increase font size" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
@@ -67,6 +69,8 @@
         background:rgba(255,255,255,.05);color:var(--gilt);">×</button>
     </div>
   </div>
+
+  <div id="gf-bookmark-rail" aria-label="Bookmarks"></div>
 
   <h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">
     Gatefold, a book reader built on the Turn.js page-flip library. Load your own .txt, .docx, or .pdf file, or read the built-in sample. Drag a page corner to turn it, tap an edge for a quick turn, use the arrow keys, or the buttons below. Fold for single-page portrait reading, unfold for a two-page spread.
@@ -208,6 +212,25 @@
   body.gf-night .sheet--text{background:#171717!important;color:#e9e4d8!important;}
   body.gf-night .running-head, body.gf-night .folio{color:rgba(233,228,216,.55)!important;}
   body.gf-night .turn-page, body.gf-night .tpage{background:#171717!important;}
+
+  #gf-bookmark-rail{
+    position:fixed;right:0;top:18%;z-index:9994;
+    display:none;flex-direction:column;gap:7px;align-items:flex-end;
+    pointer-events:none;
+  }
+  body.gf-reading-full #gf-bookmark-rail{display:flex;}
+  .gf-bookmark-tab{
+    pointer-events:auto;min-width:42px;height:32px;padding:0 8px 0 10px;
+    border:1px solid rgba(198,161,91,.55);border-right:0;
+    border-radius:12px 0 0 12px;background:rgba(27,35,64,.92);
+    color:#f2e6c9;font:600 10px var(--font-ui);letter-spacing:.02em;
+    box-shadow:0 3px 10px rgba(0,0,0,.28);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+  }
+  .gf-bookmark-tab.active{
+    min-width:50px;border-color:rgba(198,161,91,.9);color:var(--gilt);
+  }
 </style>
 <script>
 (function(){
@@ -643,6 +666,8 @@
 
     // ---------- Bible navigation ----------
     var pendingBibleBooks = [];
+    var pendingChapterHeadings = [];
+    var pageRunningHeads = [];
     var biblePageIndex = {};
     var bibleIsLoaded = false;
 
@@ -861,6 +886,48 @@
     var bookTitle = '';
     var currentSource = null;
 
+    function buildRunningHeads(pageBlocks, fallbackTitle){
+      var heads = [];
+      var currentHead = fallbackTitle || '';
+      var currentBook = '';
+      var knownHeadings = (pendingChapterHeadings || []).slice();
+
+      for(var pi=0; pi<pageBlocks.length; pi++){
+        var plain = pagePlainText(pageBlocks[pi]);
+
+        // Generic EPUB: advance to the latest h1/h2/h3 heading that appears
+        // on this page. The heading itself remains in the book body too.
+        for(var hi=0; hi<knownHeadings.length; hi++){
+          var h = knownHeadings[hi];
+          if(h && plain.indexOf(h) >= 0){
+            currentHead = h;
+          }
+        }
+
+        // Bible EPUB: track the current book heading and the first chapter
+        // reference found on the page so the running head becomes "John 3",
+        // "Genesis 12", etc.
+        for(var bi=0; bi<pendingBibleBooks.length; bi++){
+          var bh = pendingBibleBooks[bi];
+          if(bh && bh.heading && plain.indexOf(bh.heading) >= 0){
+            currentBook = bh.book || currentBook;
+            if(currentBook) currentHead = currentBook;
+          }
+        }
+
+        if(currentBook){
+          var refs = plain.match(/\b(\d{1,3}):(\d{1,3})\b/g);
+          if(refs && refs.length){
+            var cm = refs[0].match(/^(\d{1,3}):/);
+            if(cm) currentHead = currentBook + ' ' + cm[1];
+          }
+        }
+
+        heads.push(currentHead || fallbackTitle || '');
+      }
+      return heads;
+    }
+
     function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride){
       currentSource = {
         paragraphs:(paragraphs||[]).slice(),
@@ -876,6 +943,7 @@
       title = title || 'Untitled';
       var chapterLabel = chapterLabelOverride || title;
       var pageBlocks = paginateParagraphs(paragraphs, chapterLabel);
+      pageRunningHeads = buildRunningHeads(pageBlocks, chapterLabel);
 
       if(pendingBibleBooks.length){
         rebuildBiblePageIndex(pageBlocks);
@@ -889,7 +957,7 @@
 
       var html = [buildCoverHtml(title, author, chapterLabelOverride)];
       for(var i=0;i<pageBlocks.length;i++){
-        html.push(buildContentPageHtml(chapterLabel, pageBlocks[i], i+1));
+        html.push(buildContentPageHtml(pageRunningHeads[i] || chapterLabel, pageBlocks[i], i+1));
       }
       html.push(buildCloseHtml(title));
 
@@ -904,7 +972,7 @@
         width: folded ? FOLDED_W : UNFOLDED_W,
         height: folded ? FOLDED_H : UNFOLDED_H,
         display: folded ? 'single' : 'double',
-        duration: reduced ? 1 : 700,
+        duration: reduced ? 1 : 1100,
         acceleration: true,
         gradients: true,
         elevation: 50,
@@ -926,6 +994,7 @@
           end: function(){ endTurnAudio(); },
           turned: function(){
             updateChrome();
+            syncBookmarkButton();
             if(performance.now()-lastGestureTime < 420){
               playFlipAccent(lastGestureSpeed);
             }
@@ -937,6 +1006,7 @@
       sizeDevice(folded ? FOLDED_W : UNFOLDED_W, folded ? FOLDED_H : UNFOLDED_H);
       enlargePeelGrabZones();
       updateChrome();
+      syncBookmarkButton();
     }
 
     function enlargePeelGrabZones(){
@@ -946,7 +1016,9 @@
       // Make it much larger so you can begin the peel well inboard from the
       // Android edge-gesture area while retaining the true finger-following curl.
       var pageW = folded ? FOLDED_W : Math.max(1, UNFOLDED_W/2);
-      var cornerSize = Math.round(Math.min(220, Math.max(145, pageW * 0.44)));
+      // Very generous corner zone: on a phone this reaches well inboard from
+      // the OS back-gesture edge while preserving Turn.js's true peel physics.
+      var cornerSize = Math.round(Math.min(340, Math.max(190, pageW * 0.68)));
 
       try{
         flipEl.children().each(function(){
@@ -1035,7 +1107,7 @@
       showLoadStatus('Loading \u201c'+title+'\u201d\u2026');
 
       if(ext === 'txt'){
-        pendingBibleBooks = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none';
+        pendingBibleBooks = []; pendingChapterHeadings = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none';
         var r1 = new FileReader();
         r1.onload = function(e){
           try{
@@ -1047,7 +1119,7 @@
         r1.readAsText(file);
 
       } else if(ext === 'docx'){
-        pendingBibleBooks = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none';
+        pendingBibleBooks = []; pendingChapterHeadings = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none';
         if(typeof window.mammoth === 'undefined'){
           showLoadError('The Word reader is still loading \u2014 try again in a moment.');
           return;
@@ -1063,7 +1135,7 @@
         r2.readAsArrayBuffer(file);
 
       } else if(ext === 'pdf'){
-        pendingBibleBooks = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none';
+        pendingBibleBooks = []; pendingChapterHeadings = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none';
         if(typeof window.pdfjsLib === 'undefined'){
           showLoadError('The PDF reader is still loading \u2014 try again in a moment.');
           return;
@@ -1135,6 +1207,7 @@
                 return Promise.all(chapterPromises).then(function(chapterXhtmls){
                   var allParas = [];
                   pendingBibleBooks = [];
+                  pendingChapterHeadings = [];
                   chapterXhtmls.forEach(function(xhtml){
                     if(!xhtml) return;
                     var cdoc = new DOMParser().parseFromString(xhtml, 'text/html');
@@ -1145,6 +1218,7 @@
                         if(!t) return;
 
                         if(/^H[1-3]$/i.test(n.tagName)){
+                          pendingChapterHeadings.push(t);
                           var canonical = canonicalBookFromHeading(t);
                           if(canonical){
                             pendingBibleBooks.push({book:canonical,heading:t});
@@ -1290,6 +1364,8 @@
     var toolbarRef = document.getElementById('gf-toolbar-ref');
     var toolbarGo = document.getElementById('gf-toolbar-go');
     var toolbarLoad = document.getElementById('gf-toolbar-load');
+    var toolbarBookmark = document.getElementById('gf-toolbar-bookmark');
+    var bookmarkRail = document.getElementById('gf-bookmark-rail');
     var toolbarFold = document.getElementById('gf-toolbar-fold');
     var toolbarSound = document.getElementById('gf-toolbar-sound');
     var fullscreenBtn = document.getElementById('gf-fullscreen-btn');
@@ -1315,8 +1391,87 @@
 
     var lastStableViewport = null;
 
-    function openToolbar(){ toolbarEl.classList.add('open'); }
+    function openToolbar(){ toolbarEl.classList.add('open'); syncBookmarkButton(); }
     function closeToolbar(){ toolbarEl.classList.remove('open'); }
+
+    function bookmarkStorageKey(){
+      var base = (bookTitle || (currentSource && currentSource.title) || 'gatefold-book').toLowerCase();
+      return 'gatefold.bookmarks.' + base.replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    }
+
+    function getBookmarks(){
+      try{
+        var raw = localStorage.getItem(bookmarkStorageKey());
+        var arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr.filter(function(b){ return b && b.page; }) : [];
+      }catch(e){ return []; }
+    }
+
+    function saveBookmarks(arr){
+      try{ localStorage.setItem(bookmarkStorageKey(), JSON.stringify(arr)); }catch(e){}
+    }
+
+    function currentBookmarkLabel(page){
+      // Turn.js page 1 is the cover; content folio is page-1.
+      var idx = Math.max(0, page-2);
+      var head = pageRunningHeads[idx] || '';
+      return head || ('Page ' + page);
+    }
+
+    function renderBookmarkTabs(){
+      if(!bookmarkRail || !flipEl) return;
+      var marks = getBookmarks().sort(function(a,b){ return a.page-b.page; });
+      var current = 0;
+      try{ current = flipEl.turn('page'); }catch(e){}
+      bookmarkRail.innerHTML = '';
+
+      marks.slice(0,10).forEach(function(mark, i){
+        var b = document.createElement('button');
+        b.className = 'gf-bookmark-tab' + (mark.page===current ? ' active' : '');
+        b.type = 'button';
+        b.title = mark.label || ('Page '+mark.page);
+        b.setAttribute('aria-label', 'Go to bookmark ' + (mark.label || mark.page));
+        b.textContent = String(i+1);
+        b.addEventListener('click', function(e){
+          e.preventDefault();
+          try{ flipEl.turn('page', mark.page); }catch(err){}
+        });
+        bookmarkRail.appendChild(b);
+      });
+    }
+
+    function toggleBookmark(){
+      if(!flipEl) return;
+      var page;
+      try{ page = flipEl.turn('page'); }catch(e){ return; }
+      var marks = getBookmarks();
+      var existing = -1;
+      for(var i=0;i<marks.length;i++){
+        if(marks[i].page === page){ existing=i; break; }
+      }
+
+      if(existing >= 0){
+        marks.splice(existing,1);
+        toolbarBookmark.textContent = 'Bookmark';
+        showLoadStatus('Bookmark removed');
+      }else{
+        marks.push({page:page,label:currentBookmarkLabel(page),created:Date.now()});
+        toolbarBookmark.textContent = 'Bookmarked ✓';
+        showLoadStatus('Bookmark added');
+      }
+      saveBookmarks(marks);
+      renderBookmarkTabs();
+    }
+
+    function syncBookmarkButton(){
+      if(!toolbarBookmark || !flipEl) return;
+      var page = 0;
+      try{ page = flipEl.turn('page'); }catch(e){}
+      var marks = getBookmarks();
+      var marked = marks.some(function(b){ return b.page===page; });
+      toolbarBookmark.textContent = marked ? 'Bookmarked ✓' : 'Bookmark';
+      renderBookmarkTabs();
+    }
 
     function getViewportSize(){
       // visualViewport is especially useful on Android after entering fullscreen.
@@ -1395,6 +1550,11 @@
     toolbarLoad.addEventListener('click', function(){
       closeToolbar();
       setTimeout(function(){ fileInput.click(); }, 40);
+    });
+
+    toolbarBookmark.addEventListener('click', function(){
+      toggleBookmark();
+      closeToolbar();
     });
 
     toolbarFold.addEventListener('click', function(){
@@ -1552,4 +1712,4 @@
     boot();
   }
 })();
-            </script>
+    </script>
