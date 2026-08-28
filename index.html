@@ -1037,7 +1037,10 @@
       }
     }
 
+    var suppressProgressSave = false;
+
     function saveCurrentProgress(){
+      if(suppressProgressSave) return;
       if(!currentBookId || !flipEl) return;
       try{
         var page = flipEl.turn('page');
@@ -1238,7 +1241,13 @@
       enlargePeelGrabZones();
       updateChrome();
       syncBookmarkButton();
-      restorePageAfterBuild();
+
+      // Normal book-open restore is correct when loading a book. During an
+      // orientation/aspect-ratio rebuild, however, the live viewport snapshot
+      // is more accurate and must be the only restore authority.
+      if(!suppressProgressSave){
+        restorePageAfterBuild();
+      }
     }
 
     function enlargePeelGrabZones(){
@@ -1811,42 +1820,89 @@
       else if(e.key === 'ArrowLeft'){ flipEl.turn('previous'); }
     });
 
-    var resizeTimer = null;
-    var orientationTimer = null;
+    var viewportRebuildTimer = null;
+    var viewportRestoreSnapshot = null;
+    var viewportRebuildPending = false;
+
+    function captureReadingSnapshot(){
+      var snap = {
+        page:1,
+        pages:1,
+        ratio:0
+      };
+
+      try{
+        if(flipEl && flipEl.length){
+          snap.page = flipEl.turn('page') || 1;
+          snap.pages = flipEl.turn('pages') || 1;
+          snap.ratio = snap.pages > 1
+            ? (snap.page - 1) / (snap.pages - 1)
+            : 0;
+        }
+      }catch(e){}
+
+      return snap;
+    }
+
+    function scheduleViewportRebuild(){
+      // IMPORTANT: Capture only ONCE for the whole physical rotation.
+      // Android fires orientationchange + several resize events. If we recapture
+      // after the first temporary reframe, page 1 can become the new "saved"
+      // location. Keeping the original snapshot prevents that.
+      if(!viewportRebuildPending){
+        viewportRestoreSnapshot = captureReadingSnapshot();
+        viewportRebuildPending = true;
+        saveCurrentProgress();
+      }
+
+      clearTimeout(viewportRebuildTimer);
+
+      // Wait until the Fold/Chrome viewport has stopped changing.
+      viewportRebuildTimer = setTimeout(function(){
+        var vp = getViewportSize();
+
+        lastStableViewport = {
+          w:Math.round(vp.w),
+          h:Math.round(vp.h)
+        };
+
+        var snap = viewportRestoreSnapshot || captureReadingSnapshot();
+
+        viewportRestoreSnapshot = null;
+        viewportRebuildPending = false;
+
+        applyReadingMode(snap);
+      }, 650);
+    }
 
     window.addEventListener('orientationchange', function(){
-      clearTimeout(orientationTimer);
-      orientationTimer = setTimeout(function(){
-        var vp = getViewportSize();
-        lastStableViewport = {w:vp.w,h:vp.h};
-        applyReadingMode();
-      }, 420);
+      scheduleViewportRebuild();
     });
 
     window.addEventListener('resize', function(){
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(function(){
-        var vw = Math.round((window.visualViewport && window.visualViewport.width) || window.innerWidth || 0);
-        var vh = Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight || 0);
+      var vw = Math.round(
+        (window.visualViewport && window.visualViewport.width) ||
+        window.innerWidth || 0
+      );
+      var vh = Math.round(
+        (window.visualViewport && window.visualViewport.height) ||
+        window.innerHeight || 0
+      );
 
-        // Ignore the small viewport fluctuations Android produces when its
-        // gesture/navigation UI briefly appears. Those were causing the book
-        // to rebuild and visually "pop" in and out.
-        if(lastStableViewport){
-          var dw = Math.abs(vw-lastStableViewport.w);
-          var dh = Math.abs(vh-lastStableViewport.h);
-          var oldPortrait = lastStableViewport.h >= lastStableViewport.w;
-          var newPortrait = vh >= vw;
-          if(oldPortrait === newPortrait && dw < 72 && dh < 96){
-            return;
-          }
+      // Ignore small same-orientation browser chrome fluctuations.
+      if(lastStableViewport && !viewportRebuildPending){
+        var dw = Math.abs(vw-lastStableViewport.w);
+        var dh = Math.abs(vh-lastStableViewport.h);
+        var oldPortrait = lastStableViewport.h >= lastStableViewport.w;
+        var newPortrait = vh >= vw;
+
+        if(oldPortrait === newPortrait && dw < 72 && dh < 96){
+          return;
         }
+      }
 
-        lastStableViewport = {w:vw,h:vh};
-        applyReadingMode();
-      }, 320);
+      scheduleViewportRebuild();
     });
-
 
     // ---------- fullscreen/PWA reading shell ----------
     var toolbarEl = document.getElementById('gf-toolbar');
@@ -1991,27 +2047,11 @@
       return { w:Math.max(280,Math.floor(vw)), h:Math.max(320,Math.floor(vh)) };
     }
 
-    function applyReadingMode(){
-      // Preserve reading location BEFORE any aspect-ratio/orientation rebuild.
-      // A rotation changes pagination, so remember both the exact page and
-      // proportional position through the book.
-      var beforePage = 1;
-      var beforePages = 1;
-      var beforeRatio = 0;
+    function applyReadingMode(restoreSnapshot){
+      var before = restoreSnapshot || captureReadingSnapshot();
 
-      try{
-        if(flipEl && flipEl.length){
-          beforePage = flipEl.turn('page') || 1;
-          beforePages = flipEl.turn('pages') || 1;
-          beforeRatio = beforePages > 1
-            ? (beforePage - 1) / (beforePages - 1)
-            : 0;
-        }
-      }catch(e){}
-
-      // Save before rebuilding so persistent progress never gets overwritten
-      // by the temporary page-1 state of a fresh Turn.js instance.
-      saveCurrentProgress();
+      // Do not let Turn.js's fresh page-1 state overwrite stored progress.
+      suppressProgressSave = true;
 
       document.body.classList.toggle('gf-reading-full', readingMode);
       computeResponsiveSizes();
@@ -2019,8 +2059,6 @@
       if(readingMode){
         var vp = getViewportSize();
 
-        // In reading/fullscreen mode the BOOK uses the entire available viewport.
-        // Double display = two pages, each exactly half of the screen width.
         if(folded){
           FOLDED_W = vp.w;
           FOLDED_H = vp.h;
@@ -2031,7 +2069,10 @@
       }
 
       if(currentSource){
-        if(measureEl){ try{measureEl.remove();}catch(e){} measureEl=null; }
+        if(measureEl){
+          try{ measureEl.remove(); }catch(e){}
+          measureEl = null;
+        }
 
         buildBookFromParagraphs(
           currentSource.paragraphs,
@@ -2040,27 +2081,34 @@
           currentSource.chapterLabelOverride
         );
 
-        var restoreAfterLayoutChange = function(){
+        var restored = false;
+
+        function restoreAfterLayoutChange(){
+          if(restored) return;
+
           try{
             if(!flipEl || !flipEl.length) return;
 
             var afterPages = flipEl.turn('pages') || 1;
+            if(afterPages < 1) return;
+
             var target;
 
-            // Exact page if pagination did not change; otherwise restore the
-            // equivalent proportional location in the newly paginated book.
-            if(afterPages === beforePages){
-              target = beforePage;
+            if(afterPages === before.pages){
+              target = before.page;
             }else{
-              target = 1 + Math.round(beforeRatio * Math.max(0, afterPages - 1));
+              target = 1 + Math.round(
+                Math.max(0,Math.min(1,before.ratio || 0)) *
+                Math.max(0,afterPages - 1)
+              );
             }
 
-            target = Math.max(1, Math.min(afterPages, target));
+            target = Math.max(1,Math.min(afterPages,target));
 
-            // In two-page mode, prefer a valid spread page rather than cover
-            // when restoring a position that was already inside the book.
-            if(!folded && beforePage > 1 && target <= 1 && afterPages > 2){
-              target = 2;
+            // If the reader was inside the book before rotation, NEVER allow
+            // the rebuilt layout to restore to the front cover.
+            if(before.page > 1 && target <= 1 && afterPages > 2){
+              target = folded ? 2 : 2;
             }
 
             flipEl.turn('page', target);
@@ -2068,27 +2116,33 @@
 
             updateChrome();
             syncBookmarkButton();
+
+            restored = true;
+            suppressProgressSave = false;
             saveCurrentProgress();
           }catch(e){}
-        };
+        }
 
-        // Android rotation often reports two viewport sizes in quick succession.
-        // Restore after the immediate layout AND once more after it settles.
+        // One early attempt plus one settled fallback. The 'restored' flag
+        // guarantees only the first successful restore actually runs.
         requestAnimationFrame(function(){
           requestAnimationFrame(restoreAfterLayoutChange);
         });
-        setTimeout(restoreAfterLayoutChange, 120);
-        setTimeout(restoreAfterLayoutChange, 360);
+        setTimeout(restoreAfterLayoutChange, 180);
+        setTimeout(function(){
+          if(!restored){
+            restoreAfterLayoutChange();
+          }
+          if(!restored){
+            // Failsafe: never leave progress saving permanently disabled.
+            suppressProgressSave = false;
+          }
+        }, 500);
 
       }else{
         applyDisplay();
+        suppressProgressSave = false;
       }
-
-      // Turn.js occasionally needs one extra layout pass after Android hides
-      // browser/system chrome.
-      setTimeout(function(){
-        try{ flipEl.turn('resize'); }catch(e){}
-      }, 80);
     }
 
     function syncToolbarRef(){
@@ -2383,4 +2437,4 @@
     boot();
   }
 })();
-  </script>
+      </script>
