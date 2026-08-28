@@ -49,6 +49,8 @@
         background:rgba(255,255,255,.06);color:#eee7d5;font:12px var(--font-ui);outline:none;">
       <button id="gf-toolbar-go" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Go</button>
+      <button id="gf-toolbar-load" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
+        background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Load Book</button>
       <button id="gf-font-down" aria-label="Decrease font size" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:var(--gilt);">A−</button>
       <button id="gf-font-up" aria-label="Increase font size" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
@@ -1259,19 +1261,25 @@
     window.addEventListener('resize', function(){
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function(){
-        computeResponsiveSizes();
-        if(currentSource){
-          if(measureEl){ try{ measureEl.remove(); }catch(e){} measureEl = null; }
-          buildBookFromParagraphs(
-            currentSource.paragraphs,
-            currentSource.title,
-            currentSource.author,
-            currentSource.chapterLabelOverride
-          );
-        }else{
-          applyDisplay();
+        var vw = Math.round((window.visualViewport && window.visualViewport.width) || window.innerWidth || 0);
+        var vh = Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight || 0);
+
+        // Ignore the small viewport fluctuations Android produces when its
+        // gesture/navigation UI briefly appears. Those were causing the book
+        // to rebuild and visually "pop" in and out.
+        if(lastStableViewport){
+          var dw = Math.abs(vw-lastStableViewport.w);
+          var dh = Math.abs(vh-lastStableViewport.h);
+          var oldPortrait = lastStableViewport.h >= lastStableViewport.w;
+          var newPortrait = vh >= vw;
+          if(oldPortrait === newPortrait && dw < 72 && dh < 96){
+            return;
+          }
         }
-      }, 220);
+
+        lastStableViewport = {w:vw,h:vh};
+        applyReadingMode();
+      }, 320);
     });
 
 
@@ -1281,6 +1289,7 @@
     var toolbarClose = document.getElementById('gf-toolbar-close');
     var toolbarRef = document.getElementById('gf-toolbar-ref');
     var toolbarGo = document.getElementById('gf-toolbar-go');
+    var toolbarLoad = document.getElementById('gf-toolbar-load');
     var toolbarFold = document.getElementById('gf-toolbar-fold');
     var toolbarSound = document.getElementById('gf-toolbar-sound');
     var fullscreenBtn = document.getElementById('gf-fullscreen-btn');
@@ -1290,6 +1299,21 @@
 
     var readingMode = true;
     var fontScale = 1;
+
+    // When installed as a PWA, Android/Chrome already owns the app window.
+    // Re-entering the browser Fullscreen API on top of that can cause transient
+    // exits when the OS shows a picker, keyboard, gesture UI, or app chrome.
+    function isInstalledApp(){
+      return !!(
+        (window.matchMedia && (
+          window.matchMedia('(display-mode: fullscreen)').matches ||
+          window.matchMedia('(display-mode: standalone)').matches
+        )) ||
+        window.navigator.standalone
+      );
+    }
+
+    var lastStableViewport = null;
 
     function openToolbar(){ toolbarEl.classList.add('open'); }
     function closeToolbar(){ toolbarEl.classList.remove('open'); }
@@ -1368,6 +1392,11 @@
       }
     });
 
+    toolbarLoad.addEventListener('click', function(){
+      closeToolbar();
+      setTimeout(function(){ fileInput.click(); }, 40);
+    });
+
     toolbarFold.addEventListener('click', function(){
       foldBtn.click();
       closeToolbar();
@@ -1379,6 +1408,17 @@
     });
 
     fullscreenBtn.addEventListener('click', async function(){
+      // Installed PWA: do NOT stack the browser Fullscreen API on top of the
+      // app's own fullscreen display mode. That combination is what tends to
+      // bounce back to a window when Android briefly presents system UI.
+      if(isInstalledApp()){
+        readingMode = true;
+        applyReadingMode();
+        fullscreenBtn.textContent = 'Fullscreen';
+        closeToolbar();
+        return;
+      }
+
       var root = document.documentElement;
       try{
         if(!document.fullscreenElement && !document.webkitFullscreenElement){
@@ -1402,9 +1442,7 @@
         }
       }catch(e){}
 
-      // Android reports the final viewport a moment after browser chrome moves.
-      setTimeout(applyReadingMode,60);
-      setTimeout(applyReadingMode,260);
+      setTimeout(applyReadingMode,140);
       closeToolbar();
     });
 
@@ -1446,8 +1484,12 @@
     function onFullscreenLayoutChange(){
       fullscreenBtn.textContent =
         (document.fullscreenElement || document.webkitFullscreenElement) ? 'Exit Full' : 'Fullscreen';
-      setTimeout(applyReadingMode,60);
-      setTimeout(applyReadingMode,250);
+
+      // Only browser-tab fullscreen needs a relayout here. Installed PWAs stay
+      // in their own window and should not rebuild for transient Android UI.
+      if(!isInstalledApp()){
+        setTimeout(applyReadingMode,140);
+      }
     }
     document.addEventListener('fullscreenchange', onFullscreenLayoutChange);
     document.addEventListener('webkitfullscreenchange', onFullscreenLayoutChange);
@@ -1457,8 +1499,20 @@
       window.visualViewport.addEventListener('resize', function(){
         clearTimeout(vvTimer);
         vvTimer = setTimeout(function(){
-          if(readingMode) applyReadingMode();
-        }, 120);
+          if(!readingMode) return;
+          var vp = getViewportSize();
+
+          if(lastStableViewport){
+            var dw = Math.abs(vp.w-lastStableViewport.w);
+            var dh = Math.abs(vp.h-lastStableViewport.h);
+            var oldPortrait = lastStableViewport.h >= lastStableViewport.w;
+            var newPortrait = vp.h >= vp.w;
+            if(oldPortrait === newPortrait && dw < 72 && dh < 96) return;
+          }
+
+          lastStableViewport = {w:vp.w,h:vp.h};
+          applyReadingMode();
+        }, 340);
       });
     }
 
@@ -1478,7 +1532,9 @@
     // allowing the gesture to begin safely away from Android's extreme edge.
 
     // Start in frameless reading mode.
-    setTimeout(applyReadingMode, 60);
+    var initialVp = getViewportSize();
+    lastStableViewport = {w:initialVp.w,h:initialVp.h};
+    setTimeout(applyReadingMode, 80);
 
     // PWA service worker.
     if('serviceWorker' in navigator){
@@ -1496,4 +1552,4 @@
     boot();
   }
 })();
-</script>
+          </script>
