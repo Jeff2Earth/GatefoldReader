@@ -57,6 +57,8 @@
         background:rgba(255,255,255,.05);color:var(--gilt);">Theme</button>
       <button id="gf-toolbar-fold" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:var(--gilt);">Fold</button>
+      <button id="gf-toolbar-load" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
+        background:rgba(255,255,255,.05);color:var(--gilt);">Load</button>
       <button id="gf-toolbar-sound" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:var(--gilt);">Sound</button>
       <button id="gf-fullscreen-btn" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
@@ -154,7 +156,6 @@
   #flipbook .tpage { overflow:hidden; background:var(--parchment); }
   #flipbook .tpage.odd .sheet--text { padding-right:5%; }
   #flipbook .tpage.even .sheet--text { padding-left:5%; }
-  #flipbook { pointer-events:none; }
 
   #gf-prev-btn:disabled, #gf-next-btn:disabled { opacity:.3; cursor:default; }
   #gf-load-btn:hover { border-color:rgba(198,161,91,.7); color:var(--gilt); }
@@ -939,6 +940,16 @@
       screenEl.style.height = h+'px';
       deviceEl.style.width = (w+32)+'px';
       deviceEl.style.height = (h+50)+'px';
+      updateOverlayCorners(w,h);
+    }
+    function updateOverlayCorners(w,h){
+      var overlay = document.getElementById('gf-swipe-overlay');
+      if(!overlay) return;
+      var c = Math.max(36, Math.min(70, w*0.18, h*0.18));
+      var pts = [
+        [c,0],[w-c,0],[w-c,c],[w,c],[w,h-c],[w-c,h-c],[w-c,h],[c,h],[c,h-c],[0,h-c],[0,c],[c,c]
+      ];
+      overlay.style.clipPath = 'polygon(' + pts.map(function(p){ return p[0].toFixed(1)+'px '+p[1].toFixed(1)+'px'; }).join(',') + ')';
     }
     function applyDisplay(){
       var w = folded ? FOLDED_W : UNFOLDED_W;
@@ -1238,6 +1249,7 @@
     var toolbarRef = document.getElementById('gf-toolbar-ref');
     var toolbarGo = document.getElementById('gf-toolbar-go');
     var toolbarFold = document.getElementById('gf-toolbar-fold');
+    var toolbarLoad = document.getElementById('gf-toolbar-load');
     var toolbarSound = document.getElementById('gf-toolbar-sound');
     var fullscreenBtn = document.getElementById('gf-fullscreen-btn');
     var fontUpBtn = document.getElementById('gf-font-up');
@@ -1313,6 +1325,11 @@
     toolbarFold.addEventListener('click', function(){
       foldBtn.click();
       closeToolbar();
+    });
+
+    toolbarLoad.addEventListener('click', function(){
+      closeToolbar();
+      fileInput.click();
     });
 
     toolbarSound.addEventListener('click', function(){
@@ -1437,4 +1454,4 @@
     boot();
   }
 })();
-                                          </script>
+                                                </script>
