@@ -267,7 +267,7 @@
       var patchedAnimatef = function(point){
         if(point && point.turning){
           // Successful turn after release.
-          point.duration = 1550;
+          point.duration = 1180;
           point.easing = function(x, t, b, c, d){
             var p = Math.max(0, Math.min(1, t/d));
             p = p*p*(3 - 2*p); // smoothstep
@@ -275,7 +275,7 @@
           };
         }else if(point && point.hiding){
           // Page settling back when the pull did not commit.
-          point.duration = 1050;
+          point.duration = 820;
           point.easing = function(x, t, b, c, d){
             var p = Math.max(0, Math.min(1, t/d));
             p = 0.5 - 0.5*Math.cos(Math.PI*p);
@@ -1202,7 +1202,7 @@
         width: folded ? FOLDED_W : UNFOLDED_W,
         height: folded ? FOLDED_H : UNFOLDED_H,
         display: folded ? 'single' : 'double',
-        duration: reduced ? 1 : 1550,
+        duration: reduced ? 1 : 1180,
         acceleration: true,
         gradients: true,
         elevation: 50,
@@ -1256,7 +1256,7 @@
           var d = $page.data();
           if(d && d.f && d.f.opts){
             d.f.opts.cornerSize = cornerSize;
-            d.f.opts.duration = reduced ? 1 : 1550;
+            d.f.opts.duration = reduced ? 1 : 1180;
           }
         }catch(e){}
       }
@@ -1519,8 +1519,11 @@
     // corner into Turn.js while retaining its real page-curl physics.
     var quadrantOverlay = document.getElementById('gf-swipe-overlay');
     var quadrantGesture = null;
-    var COMMIT_DRAG_PX = 8;   // tiny deliberate drag commits the turn
-    var TOOLBAR_STRIP_PX = 48; // keep only the very top strip for controls
+    var COMMIT_DRAG_PX = 2.5; // almost any intentional horizontal pull commits
+    var DRAG_GAIN_X = 5.0;     // 1px finger motion = 5px virtual page pull
+    var DRAG_GAIN_Y = 2.2;     // vertical motion is amplified too, but less
+    var INITIAL_CURL_PX = 10;  // page visibly "grabs" immediately on touch
+    var TOOLBAR_STRIP_PX = 42; // only a very thin top strip is reserved for controls
 
     function pageForQuadrant(wantRight){
       try{
@@ -1586,19 +1589,25 @@
 
         $page.flip('_eventStart', syntheticTouchEvent(sx,sy));
 
-        // Immediately bring the curl under the user's finger. This produces
-        // the "grab anywhere and pull the page" behavior.
-        $page.flip('_eventMove', syntheticTouchEvent(e.pageX,e.pageY));
+        // Give immediate visual feedback at the selected corner. The user's
+        // physical touch can be anywhere in that quadrant; from here on we
+        // translate their movement into a virtual pull that starts at the
+        // actual page corner.
+        var initialX = sx + (wantRight ? -INITIAL_CURL_PX : INITIAL_CURL_PX);
+        $page.flip('_eventMove', syntheticTouchEvent(initialX,sy));
 
         quadrantGesture = {
           pointerId:e.pointerId,
           page:$page,
           corner:corner,
           wantRight:wantRight,
+          wantBottom:wantBottom,
           startX:e.clientX,
           startY:e.clientY,
           lastX:e.clientX,
           lastY:e.clientY,
+          virtualStartX:sx,
+          virtualStartY:sy,
           committed:false
         };
 
@@ -1619,13 +1628,20 @@
       g.lastX = e.clientX;
       g.lastY = e.clientY;
 
+      var dx = e.clientX-g.startX;
+      var dy = e.clientY-g.startY;
+
+      // Map a tiny physical movement into a much larger virtual pull from the
+      // chosen page corner. This means the finger no longer has to travel
+      // anywhere near the opposite-page territory.
+      var vx = g.virtualStartX + dx * DRAG_GAIN_X;
+      var vy = g.virtualStartY + dy * DRAG_GAIN_Y;
+
       try{
-        g.page.flip('_eventMove', syntheticTouchEvent(e.pageX,e.pageY));
+        g.page.flip('_eventMove', syntheticTouchEvent(vx,vy));
       }catch(err){}
 
-      var dx = e.clientX-g.startX;
-
-      // Only 8 pixels in the natural turning direction is enough to commit.
+      // Roughly 2.5px in the natural direction commits the page.
       if((g.wantRight && dx <= -COMMIT_DRAG_PX) ||
          (!g.wantRight && dx >= COMMIT_DRAG_PX)){
         g.committed = true;
@@ -1642,9 +1658,13 @@
       quadrantGesture = null;
 
       try{
-        if(!cancelled && g.committed){
-          // Bypass Turn.js's stock "must drag far enough" release test.
-          // The small intentional drag above is our commitment threshold.
+        var totalDx = g.lastX-g.startX;
+        var totalDy = g.lastY-g.startY;
+        var tinyHorizontalIntent = Math.abs(totalDx) >= 4 && Math.abs(totalDx) >= Math.abs(totalDy)*0.55;
+
+        if(!cancelled && (g.committed || tinyHorizontalIntent)){
+          // Gatefold owns the commitment threshold. Turn.js only performs the
+          // beautiful curl/finish animation once a tiny intentional pull is seen.
           g.page.flip('turnPage', g.corner);
         }else{
           // No deliberate drag: return the page smoothly.
@@ -2073,7 +2093,8 @@
         style.id = 'gf-font-scale-style';
         document.head.appendChild(style);
       }
-      style.textContent = '.gf-root .para{font-size:calc(13px * '+fontScale+')}';
+      var userFontPx = +(13 * fontScale).toFixed(2);
+      style.textContent = '.gf-root .para{font-size:'+userFontPx+'px!important;}';
       if(currentSource){
         if(measureEl){ try{measureEl.remove();}catch(e){} measureEl=null; }
         buildBookFromParagraphs(
@@ -2143,7 +2164,7 @@
     // Tap the top 12% of the active page spread to reveal controls.
     screenEl.addEventListener('pointerdown', function(e){
       var r = screenEl.getBoundingClientRect();
-      if((e.clientY-r.top) <= 48){
+      if((e.clientY-r.top) <= 42){
         syncToolbarRef();
         openToolbar();
       }
@@ -2195,4 +2216,4 @@
     boot();
   }
 })();
-  </script>
+              </script>
