@@ -34,6 +34,14 @@
     position:fixed;left:0;right:0;top:0;height:42px;z-index:9997;
     background:transparent;"></div>
 
+  <button id="gf-menu-handle" aria-label="Open menu to load a book, fold, or change settings" style="
+    display:none;position:fixed;left:50%;top:8px;transform:translateX(-50%);
+    z-index:9996;width:52px;height:22px;border-radius:11px;padding:0;
+    border:1px solid rgba(198,161,91,.45);background:rgba(19,22,39,.55);
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    color:var(--gilt);font-size:13px;line-height:1;cursor:pointer;
+    align-items:center;justify-content:center;">&#8942;</button>
+
   <div id="gf-toolbar" style="
     position:fixed;left:0;right:0;top:0;z-index:9998;
     transform:translateY(-105%);transition:transform .24s ease;
@@ -192,6 +200,7 @@
     display:none!important;
   }
   body.gf-reading-full #gf-sound-btn{display:none!important;}
+  body.gf-reading-full #gf-menu-handle{display:flex!important;}
   #gf-toolbar.open{transform:translateY(0)!important;}
   body.gf-night .sheet--text{background:#171717!important;color:#e9e4d8!important;}
   body.gf-night .running-head, body.gf-night .folio{color:rgba(233,228,216,.55)!important;}
@@ -1305,6 +1314,13 @@
       openToolbar();
     });
 
+    var menuHandleEl = document.getElementById('gf-menu-handle');
+    menuHandleEl.addEventListener('click', function(e){
+      e.preventDefault();
+      syncToolbarRef();
+      openToolbar();
+    });
+
     toolbarClose.addEventListener('click', closeToolbar);
 
     toolbarGo.addEventListener('click', function(){
@@ -1454,4 +1470,4 @@
     boot();
   }
 })();
-                                                </script>
+                     </script>
