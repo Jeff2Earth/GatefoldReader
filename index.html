@@ -267,7 +267,7 @@
       var patchedAnimatef = function(point){
         if(point && point.turning){
           // Successful turn after release.
-          point.duration = 1180;
+          point.duration = 920;
           point.easing = function(x, t, b, c, d){
             var p = Math.max(0, Math.min(1, t/d));
             p = p*p*(3 - 2*p); // smoothstep
@@ -275,7 +275,7 @@
           };
         }else if(point && point.hiding){
           // Page settling back when the pull did not commit.
-          point.duration = 820;
+          point.duration = 650;
           point.easing = function(x, t, b, c, d){
             var p = Math.max(0, Math.min(1, t/d));
             p = 0.5 - 0.5*Math.cos(Math.PI*p);
@@ -1202,7 +1202,7 @@
         width: folded ? FOLDED_W : UNFOLDED_W,
         height: folded ? FOLDED_H : UNFOLDED_H,
         display: folded ? 'single' : 'double',
-        duration: reduced ? 1 : 1180,
+        duration: reduced ? 1 : 920,
         acceleration: true,
         gradients: true,
         elevation: 50,
@@ -1256,7 +1256,7 @@
           var d = $page.data();
           if(d && d.f && d.f.opts){
             d.f.opts.cornerSize = cornerSize;
-            d.f.opts.duration = reduced ? 1 : 1180;
+            d.f.opts.duration = reduced ? 1 : 920;
           }
         }catch(e){}
       }
@@ -1519,11 +1519,12 @@
     // corner into Turn.js while retaining its real page-curl physics.
     var quadrantOverlay = document.getElementById('gf-swipe-overlay');
     var quadrantGesture = null;
-    var COMMIT_DRAG_PX = 2.5; // almost any intentional horizontal pull commits
-    var DRAG_GAIN_X = 5.0;     // 1px finger motion = 5px virtual page pull
-    var DRAG_GAIN_Y = 2.2;     // vertical motion is amplified too, but less
-    var INITIAL_CURL_PX = 10;  // page visibly "grabs" immediately on touch
-    var TOOLBAR_STRIP_PX = 42; // only a very thin top strip is reserved for controls
+    var COMMIT_DRAG_PX = 1.5; // essentially any intentional horizontal motion commits
+    var DRAG_GAIN_X = 8.0;     // tiny finger movement creates a much larger virtual pull
+    var DRAG_GAIN_Y = 2.0;
+    var INITIAL_CURL_PX = 18;  // visible corner grab immediately on touch
+    var AUTO_PULL_RATIO = 0.42; // once committed, jump curl ~42% across the page
+    var TOOLBAR_STRIP_PX = 30; // nearly the entire page surface is a turn target
 
     function pageForQuadrant(wantRight){
       try{
@@ -1608,7 +1609,10 @@
           lastY:e.clientY,
           virtualStartX:sx,
           virtualStartY:sy,
-          committed:false
+          pageW:pw,
+          pageH:ph,
+          committed:false,
+          autoPulled:false
         };
 
         try{ quadrantOverlay.setPointerCapture(e.pointerId); }catch(err){}
@@ -1641,10 +1645,27 @@
         g.page.flip('_eventMove', syntheticTouchEvent(vx,vy));
       }catch(err){}
 
-      // Roughly 2.5px in the natural direction commits the page.
+      // Essentially any tiny horizontal movement in the natural direction
+      // commits the turn. Once committed, automatically pull the curl well
+      // inward so the user never has to stretch toward the opposite page.
       if((g.wantRight && dx <= -COMMIT_DRAG_PX) ||
          (!g.wantRight && dx >= COMMIT_DRAG_PX)){
         g.committed = true;
+
+        if(!g.autoPulled){
+          g.autoPulled = true;
+
+          var forcedX = g.virtualStartX +
+            (g.wantRight ? -1 : 1) * (g.pageW * AUTO_PULL_RATIO);
+
+          // Keep the chosen top/bottom character of the curl.
+          var forcedY = g.virtualStartY +
+            (g.wantBottom ? -1 : 1) * Math.min(g.pageH * 0.08, 42);
+
+          try{
+            g.page.flip('_eventMove', syntheticTouchEvent(forcedX,forcedY));
+          }catch(err){}
+        }
       }
 
       e.preventDefault();
@@ -1660,7 +1681,9 @@
       try{
         var totalDx = g.lastX-g.startX;
         var totalDy = g.lastY-g.startY;
-        var tinyHorizontalIntent = Math.abs(totalDx) >= 4 && Math.abs(totalDx) >= Math.abs(totalDy)*0.55;
+        var tinyHorizontalIntent =
+          Math.abs(totalDx) >= 2 &&
+          Math.abs(totalDx) >= Math.abs(totalDy)*0.35;
 
         if(!cancelled && (g.committed || tinyHorizontalIntent)){
           // Gatefold owns the commitment threshold. Turn.js only performs the
@@ -2164,7 +2187,7 @@
     // Tap the top 12% of the active page spread to reveal controls.
     screenEl.addEventListener('pointerdown', function(e){
       var r = screenEl.getBoundingClientRect();
-      if((e.clientY-r.top) <= 42){
+      if((e.clientY-r.top) <= 30){
         syncToolbarRef();
         openToolbar();
       }
@@ -2216,4 +2239,4 @@
     boot();
   }
 })();
-              </script>
+</script>
