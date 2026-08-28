@@ -249,6 +249,40 @@
   }
 
   function init($){
+
+    // ---------- Gatefold release-motion patch ----------
+    // Turn.js 3 uses animatef() after the finger is released. Its stock
+    // easing moves most of the page early, which looks like a snap.
+    // Only automatic post-release motion is changed here; live dragging
+    // still follows the finger directly.
+    if(!$.fn.animatef._gatefoldPatched){
+      var originalAnimatef = $.fn.animatef;
+
+      var patchedAnimatef = function(point){
+        if(point && point.turning){
+          // Successful turn after release.
+          point.duration = 1950;
+          point.easing = function(x, t, b, c, d){
+            var p = Math.max(0, Math.min(1, t/d));
+            p = p*p*(3 - 2*p); // smoothstep
+            return b + c*p;
+          };
+        }else if(point && point.hiding){
+          // Page settling back when the pull did not commit.
+          point.duration = 1350;
+          point.easing = function(x, t, b, c, d){
+            var p = Math.max(0, Math.min(1, t/d));
+            p = 0.5 - 0.5*Math.cos(Math.PI*p);
+            return b + c*p;
+          };
+        }
+        return originalAnimatef.apply(this, arguments);
+      };
+
+      patchedAnimatef._gatefoldPatched = true;
+      $.fn.animatef = patchedAnimatef;
+    }
+
     var deviceEl = document.getElementById('gf-device');
     var screenEl = document.getElementById('gf-screen');
     var flipEl = $('#flipbook');
@@ -1162,7 +1196,7 @@
         width: folded ? FOLDED_W : UNFOLDED_W,
         height: folded ? FOLDED_H : UNFOLDED_H,
         display: folded ? 'single' : 'double',
-        duration: reduced ? 1 : 1650,
+        duration: reduced ? 1 : 1950,
         acceleration: true,
         gradients: true,
         elevation: 50,
@@ -1183,6 +1217,7 @@
           },
           end: function(){ endTurnAudio(); },
           turned: function(){
+            enlargePeelGrabZones();
             updateChrome();
             syncBookmarkButton();
             saveCurrentProgress();
@@ -1202,38 +1237,46 @@
     }
 
     function enlargePeelGrabZones(){
-      if(!flipEl || !$.fn.flip) return;
+      if(!flipEl || !flipEl.length) return;
 
-      // Turn.js 3 defaults to a 100px x 100px corner grab zone.
-      // Make it much larger so you can begin the peel well inboard from the
-      // Android edge-gesture area while retaining the true finger-following curl.
       var pageW = folded ? FOLDED_W : Math.max(1, UNFOLDED_W/2);
+      var pageH = folded ? FOLDED_H : UNFOLDED_H;
 
-      // Extra-large invisible pull region. Turn.js is still doing a real
-      // finger-following peel, but the gesture can begin far inboard from the
-      // Android edge-navigation zone.
-      var cornerSize = Math.round(Math.min(430, Math.max(230, pageW * 0.82)));
+      // Turn.js 3 uses a square corner activation zone. To make nearly the
+      // whole side edge usable, the square must reach a little beyond the
+      // vertical midpoint. The top and bottom zones then overlap.
+      var cornerSize = Math.round(Math.min(
+        900,
+        Math.max(320, pageH * 0.56, pageW * 0.92)
+      ));
 
+      function applyToPage(el){
+        try{
+          var $page = $(el);
+          var d = $page.data();
+          if(d && d.f && d.f.opts){
+            // Directly update Turn.js 3's real page options.
+            d.f.opts.cornerSize = cornerSize;
+            d.f.opts.duration = reduced ? 1 : 1950;
+          }
+        }catch(e){}
+      }
+
+      // Active page objects held internally by Turn.js.
       try{
-        flipEl.children().each(function(){
-          var $page = $(this);
-          try{
-            if($page.data('f')){
-              $page.flip('options', { cornerSize:cornerSize, duration:(reduced ? 1 : 1650) });
+        var td = flipEl.data();
+        if(td && td.pages){
+          for(var p in td.pages){
+            if(td.pages[p] && td.pages[p].length){
+              applyToPage(td.pages[p]);
             }
-          }catch(e){}
-        });
-
-        // Turn.js may wrap/move page nodes; catch any initialized flip nodes too.
-        flipEl.find('.tpage').each(function(){
-          var $page = $(this);
-          try{
-            if($page.data('f')){
-              $page.flip('options', { cornerSize:cornerSize, duration:(reduced ? 1 : 1650) });
-            }
-          }catch(e){}
-        });
+          }
+        }
       }catch(e){}
+
+      // Catch current DOM page nodes too.
+      flipEl.children().each(function(){ applyToPage(this); });
+      flipEl.find('.turn-page').each(function(){ applyToPage(this); });
     }
 
     function updateChrome(){
@@ -1971,4 +2014,4 @@
     boot();
   }
 })();
-  </script>
+                                  </script>
