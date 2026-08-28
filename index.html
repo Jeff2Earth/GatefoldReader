@@ -34,14 +34,6 @@
     position:fixed;left:0;right:0;top:0;height:42px;z-index:9997;
     background:transparent;"></div>
 
-  <button id="gf-menu-handle" aria-label="Open menu to load a book, fold, or change settings" style="
-    display:none;position:fixed;left:50%;top:8px;transform:translateX(-50%);
-    z-index:9996;width:52px;height:22px;border-radius:11px;padding:0;
-    border:1px solid rgba(198,161,91,.45);background:rgba(19,22,39,.55);
-    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
-    color:var(--gilt);font-size:13px;line-height:1;cursor:pointer;
-    align-items:center;justify-content:center;">&#8942;</button>
-
   <div id="gf-toolbar" style="
     position:fixed;left:0;right:0;top:0;z-index:9998;
     transform:translateY(-105%);transition:transform .24s ease;
@@ -65,8 +57,6 @@
         background:rgba(255,255,255,.05);color:var(--gilt);">Theme</button>
       <button id="gf-toolbar-fold" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:var(--gilt);">Fold</button>
-      <button id="gf-toolbar-load" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
-        background:rgba(255,255,255,.05);color:var(--gilt);">Load</button>
       <button id="gf-toolbar-sound" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:var(--gilt);">Sound</button>
       <button id="gf-fullscreen-btn" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
@@ -164,6 +154,8 @@
   #flipbook .tpage { overflow:hidden; background:var(--parchment); }
   #flipbook .tpage.odd .sheet--text { padding-right:5%; }
   #flipbook .tpage.even .sheet--text { padding-left:5%; }
+  #flipbook { pointer-events:auto; }
+  #gf-swipe-overlay { pointer-events:none!important; }
 
   #gf-prev-btn:disabled, #gf-next-btn:disabled { opacity:.3; cursor:default; }
   #gf-load-btn:hover { border-color:rgba(198,161,91,.7); color:var(--gilt); }
@@ -190,7 +182,17 @@
     position:absolute!important;inset:0!important;width:100vw!important;height:100dvh!important;
     display:flex!important;align-items:center!important;justify-content:center!important;
   }
-  body.gf-reading-full #flipbook{margin:auto;}
+  body.gf-reading-full #flipbook{
+    margin:0!important;
+    position:absolute!important;
+    inset:0!important;
+    max-width:none!important;
+    max-height:none!important;
+  }
+  body.gf-reading-full .turn-page-wrapper,
+  body.gf-reading-full .turn-page{
+    max-height:none!important;
+  }
   body.gf-reading-full .gf-root > div[style*="display:flex; align-items:center; gap:14px;"],
   body.gf-reading-full #gf-load-btn,
   body.gf-reading-full #gf-file-input,
@@ -200,7 +202,6 @@
     display:none!important;
   }
   body.gf-reading-full #gf-sound-btn{display:none!important;}
-  body.gf-reading-full #gf-menu-handle{display:flex!important;}
   #gf-toolbar.open{transform:translateY(0)!important;}
   body.gf-night .sheet--text{background:#171717!important;color:#e9e4d8!important;}
   body.gf-night .running-head, body.gf-night .folio{color:rgba(233,228,216,.55)!important;}
@@ -932,7 +933,39 @@
 
       bookTitle = title;
       sizeDevice(folded ? FOLDED_W : UNFOLDED_W, folded ? FOLDED_H : UNFOLDED_H);
+      enlargePeelGrabZones();
       updateChrome();
+    }
+
+    function enlargePeelGrabZones(){
+      if(!flipEl || !$.fn.flip) return;
+
+      // Turn.js 3 defaults to a 100px x 100px corner grab zone.
+      // Make it much larger so you can begin the peel well inboard from the
+      // Android edge-gesture area while retaining the true finger-following curl.
+      var pageW = folded ? FOLDED_W : Math.max(1, UNFOLDED_W/2);
+      var cornerSize = Math.round(Math.min(220, Math.max(145, pageW * 0.44)));
+
+      try{
+        flipEl.children().each(function(){
+          var $page = $(this);
+          try{
+            if($page.data('f')){
+              $page.flip('options', { cornerSize:cornerSize });
+            }
+          }catch(e){}
+        });
+
+        // Turn.js may wrap/move page nodes; catch any initialized flip nodes too.
+        flipEl.find('.tpage').each(function(){
+          var $page = $(this);
+          try{
+            if($page.data('f')){
+              $page.flip('options', { cornerSize:cornerSize });
+            }
+          }catch(e){}
+        });
+      }catch(e){}
     }
 
     function updateChrome(){
@@ -949,16 +982,6 @@
       screenEl.style.height = h+'px';
       deviceEl.style.width = (w+32)+'px';
       deviceEl.style.height = (h+50)+'px';
-      updateOverlayCorners(w,h);
-    }
-    function updateOverlayCorners(w,h){
-      var overlay = document.getElementById('gf-swipe-overlay');
-      if(!overlay) return;
-      var c = Math.max(36, Math.min(70, w*0.18, h*0.18));
-      var pts = [
-        [c,0],[w-c,0],[w-c,c],[w,c],[w,h-c],[w-c,h-c],[w-c,h],[c,h],[c,h-c],[0,h-c],[0,c],[c,c]
-      ];
-      overlay.style.clipPath = 'polygon(' + pts.map(function(p){ return p[0].toFixed(1)+'px '+p[1].toFixed(1)+'px'; }).join(',') + ')';
     }
     function applyDisplay(){
       var w = folded ? FOLDED_W : UNFOLDED_W;
@@ -966,6 +989,7 @@
       flipEl.turn('size', w, h);
       flipEl.turn('display', folded ? 'single' : 'double');
       sizeDevice(w, h);
+      enlargePeelGrabZones();
       updateChrome();
     }
 
@@ -1258,7 +1282,6 @@
     var toolbarRef = document.getElementById('gf-toolbar-ref');
     var toolbarGo = document.getElementById('gf-toolbar-go');
     var toolbarFold = document.getElementById('gf-toolbar-fold');
-    var toolbarLoad = document.getElementById('gf-toolbar-load');
     var toolbarSound = document.getElementById('gf-toolbar-sound');
     var fullscreenBtn = document.getElementById('gf-fullscreen-btn');
     var fontUpBtn = document.getElementById('gf-font-up');
@@ -1271,21 +1294,29 @@
     function openToolbar(){ toolbarEl.classList.add('open'); }
     function closeToolbar(){ toolbarEl.classList.remove('open'); }
 
+    function getViewportSize(){
+      // visualViewport is especially useful on Android after entering fullscreen.
+      var vv = window.visualViewport;
+      var vw = vv && vv.width ? vv.width : (window.innerWidth || document.documentElement.clientWidth || screen.width || 800);
+      var vh = vv && vv.height ? vv.height : (window.innerHeight || document.documentElement.clientHeight || screen.height || 700);
+      return { w:Math.max(280,Math.floor(vw)), h:Math.max(320,Math.floor(vh)) };
+    }
+
     function applyReadingMode(){
       document.body.classList.toggle('gf-reading-full', readingMode);
       computeResponsiveSizes();
-      if(readingMode){
-        var vw = window.innerWidth || 800;
-        var vh = window.innerHeight || 700;
-        var spreadW = folded ? Math.min(vw, vh*.66) : vw;
-        var spreadH = folded ? vh : Math.min(vh, vw/1.42);
 
+      if(readingMode){
+        var vp = getViewportSize();
+
+        // In reading/fullscreen mode the BOOK uses the entire available viewport.
+        // Double display = two pages, each exactly half of the screen width.
         if(folded){
-          FOLDED_W = Math.floor(spreadW);
-          FOLDED_H = Math.floor(vh);
+          FOLDED_W = vp.w;
+          FOLDED_H = vp.h;
         }else{
-          UNFOLDED_W = Math.floor(vw);
-          UNFOLDED_H = Math.floor(spreadH);
+          UNFOLDED_W = vp.w;
+          UNFOLDED_H = vp.h;
         }
       }
 
@@ -1300,6 +1331,12 @@
       }else{
         applyDisplay();
       }
+
+      // Turn.js occasionally needs one extra layout pass after Android hides
+      // browser/system chrome.
+      setTimeout(function(){
+        try{ flipEl.turn('resize'); }catch(e){}
+      }, 80);
     }
 
     function syncToolbarRef(){
@@ -1309,13 +1346,6 @@
     }
 
     topHitEl.addEventListener('pointerdown', function(e){
-      e.preventDefault();
-      syncToolbarRef();
-      openToolbar();
-    });
-
-    var menuHandleEl = document.getElementById('gf-menu-handle');
-    menuHandleEl.addEventListener('click', function(e){
       e.preventDefault();
       syncToolbarRef();
       openToolbar();
@@ -1343,27 +1373,38 @@
       closeToolbar();
     });
 
-    toolbarLoad.addEventListener('click', function(){
-      closeToolbar();
-      fileInput.click();
-    });
-
     toolbarSound.addEventListener('click', function(){
       soundBtn.click();
       toolbarSound.textContent = soundOn ? 'Sound' : 'Muted';
     });
 
     fullscreenBtn.addEventListener('click', async function(){
+      var root = document.documentElement;
       try{
-        if(!document.fullscreenElement){
-          await document.documentElement.requestFullscreen();
+        if(!document.fullscreenElement && !document.webkitFullscreenElement){
+          if(root.requestFullscreen){
+            try{
+              await root.requestFullscreen({navigationUI:'hide'});
+            }catch(err){
+              await root.requestFullscreen();
+            }
+          }else if(root.webkitRequestFullscreen){
+            root.webkitRequestFullscreen();
+          }
           fullscreenBtn.textContent = 'Exit Full';
         }else{
-          await document.exitFullscreen();
+          if(document.exitFullscreen){
+            await document.exitFullscreen();
+          }else if(document.webkitExitFullscreen){
+            document.webkitExitFullscreen();
+          }
           fullscreenBtn.textContent = 'Fullscreen';
         }
       }catch(e){}
-      setTimeout(applyReadingMode,120);
+
+      // Android reports the final viewport a moment after browser chrome moves.
+      setTimeout(applyReadingMode,60);
+      setTimeout(applyReadingMode,260);
       closeToolbar();
     });
 
@@ -1402,10 +1443,24 @@
       closeToolbar();
     });
 
-    document.addEventListener('fullscreenchange', function(){
-      fullscreenBtn.textContent = document.fullscreenElement ? 'Exit Full' : 'Fullscreen';
-      setTimeout(applyReadingMode,120);
-    });
+    function onFullscreenLayoutChange(){
+      fullscreenBtn.textContent =
+        (document.fullscreenElement || document.webkitFullscreenElement) ? 'Exit Full' : 'Fullscreen';
+      setTimeout(applyReadingMode,60);
+      setTimeout(applyReadingMode,250);
+    }
+    document.addEventListener('fullscreenchange', onFullscreenLayoutChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenLayoutChange);
+
+    if(window.visualViewport){
+      var vvTimer = null;
+      window.visualViewport.addEventListener('resize', function(){
+        clearTimeout(vvTimer);
+        vvTimer = setTimeout(function(){
+          if(readingMode) applyReadingMode();
+        }, 120);
+      });
+    }
 
     // Tap the top 12% of the active page spread to reveal controls.
     screenEl.addEventListener('pointerdown', function(e){
@@ -1416,40 +1471,11 @@
       }
     }, true);
 
-    // ---------- swipe/tap anywhere to turn a page ----------
-    // Turn.js only starts its own drag right at a page corner, which is exactly
-    // where OS edge-gesture zones tend to live. #flipbook has pointer-events:none
-    // (see CSS) so turn.js's native corner drag never receives a touch at all;
-    // this overlay owns 100% of the gesture instead and drives turn.js
-    // programmatically, so a swipe or tap anywhere on the page works safely.
-    var swipeOverlay = document.getElementById('gf-swipe-overlay');
-    var swipeStartX = null, swipeStartY = null, swipeStartT = 0, swipeMoved = false;
-    swipeOverlay.addEventListener('pointerdown', function(e){
-      swipeStartX = e.clientX; swipeStartY = e.clientY; swipeStartT = Date.now(); swipeMoved = false;
-      try{ swipeOverlay.setPointerCapture(e.pointerId); }catch(err){}
-    });
-    swipeOverlay.addEventListener('pointermove', function(e){
-      if(swipeStartX===null) return;
-      if(Math.abs(e.clientX-swipeStartX) > 6 || Math.abs(e.clientY-swipeStartY) > 6){ swipeMoved = true; }
-    });
-    swipeOverlay.addEventListener('pointerup', function(e){
-      if(swipeStartX===null) return;
-      var dx = e.clientX - swipeStartX;
-      var dy = e.clientY - swipeStartY;
-      var dt = Date.now() - swipeStartT;
-      var startX = swipeStartX;
-      swipeStartX = null;
-      if(!flipEl) return;
-      if(Math.abs(dx) > 36 && Math.abs(dx) > Math.abs(dy) * 1.3 && dt < 800){
-        if(dx < 0){ flipEl.turn('next'); } else { flipEl.turn('previous'); }
-      } else if(!swipeMoved && dt < 400){
-        var r = swipeOverlay.getBoundingClientRect();
-        if((e.clientY - r.top) < Math.max(44, r.height*.12)) return;
-        var localX = startX - r.left;
-        if(localX < r.width/2){ flipEl.turn('previous'); } else { flipEl.turn('next'); }
-      }
-    });
-    swipeOverlay.addEventListener('pointercancel', function(){ swipeStartX = null; });
+    // ---------- native peel interaction ----------
+    // The old full-screen swipe overlay has intentionally been removed.
+    // Turn.js now receives touch directly, so the sheet follows the finger.
+    // enlargePeelGrabZones() makes the invisible corner regions much larger,
+    // allowing the gesture to begin safely away from Android's extreme edge.
 
     // Start in frameless reading mode.
     setTimeout(applyReadingMode, 60);
@@ -1470,4 +1496,4 @@
     boot();
   }
 })();
-                                  </script>
+                                            </script>
