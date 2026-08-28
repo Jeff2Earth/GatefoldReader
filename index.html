@@ -1527,12 +1527,12 @@
     // corner into Turn.js while retaining its real page-curl physics.
     var quadrantOverlay = document.getElementById('gf-swipe-overlay');
     var quadrantGesture = null;
-    var COMMIT_DRAG_PX = 1.25; // tiny but deliberate horizontal movement latches the turn
+    var COMMIT_DRAG_PX = 0.65; // even lighter intentional movement latches the turn
     var DRAG_GAIN_X = 16.0;    // very short finger travel produces a strong page pull
     var DRAG_GAIN_Y = 1.0;
     var INITIAL_CURL_PX = 22;  // visible grab immediately on touch
     var AUTO_PULL_RATIO = 0.82; // latched turn continues most of the way across automatically
-    var TOOLBAR_STRIP_PX = 24; // almost the entire readable screen is a turn target
+    var TOOLBAR_STRIP_PX = 8; // leave only a very thin top strip; nearly all page area can start a turn
     var AUTO_GLIDE_MS = 170;   // smooth continuation after the tiny swipe commits
 
     function pageForQuadrant(wantRight){
@@ -2610,4 +2610,4 @@
     boot();
   }
 })();
-          </script>
+</script>
