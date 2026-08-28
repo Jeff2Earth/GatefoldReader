@@ -1812,6 +1812,17 @@
     });
 
     var resizeTimer = null;
+    var orientationTimer = null;
+
+    window.addEventListener('orientationchange', function(){
+      clearTimeout(orientationTimer);
+      orientationTimer = setTimeout(function(){
+        var vp = getViewportSize();
+        lastStableViewport = {w:vp.w,h:vp.h};
+        applyReadingMode();
+      }, 420);
+    });
+
     window.addEventListener('resize', function(){
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function(){
@@ -1981,6 +1992,27 @@
     }
 
     function applyReadingMode(){
+      // Preserve reading location BEFORE any aspect-ratio/orientation rebuild.
+      // A rotation changes pagination, so remember both the exact page and
+      // proportional position through the book.
+      var beforePage = 1;
+      var beforePages = 1;
+      var beforeRatio = 0;
+
+      try{
+        if(flipEl && flipEl.length){
+          beforePage = flipEl.turn('page') || 1;
+          beforePages = flipEl.turn('pages') || 1;
+          beforeRatio = beforePages > 1
+            ? (beforePage - 1) / (beforePages - 1)
+            : 0;
+        }
+      }catch(e){}
+
+      // Save before rebuilding so persistent progress never gets overwritten
+      // by the temporary page-1 state of a fresh Turn.js instance.
+      saveCurrentProgress();
+
       document.body.classList.toggle('gf-reading-full', readingMode);
       computeResponsiveSizes();
 
@@ -2000,12 +2032,54 @@
 
       if(currentSource){
         if(measureEl){ try{measureEl.remove();}catch(e){} measureEl=null; }
+
         buildBookFromParagraphs(
           currentSource.paragraphs,
           currentSource.title,
           currentSource.author,
           currentSource.chapterLabelOverride
         );
+
+        var restoreAfterLayoutChange = function(){
+          try{
+            if(!flipEl || !flipEl.length) return;
+
+            var afterPages = flipEl.turn('pages') || 1;
+            var target;
+
+            // Exact page if pagination did not change; otherwise restore the
+            // equivalent proportional location in the newly paginated book.
+            if(afterPages === beforePages){
+              target = beforePage;
+            }else{
+              target = 1 + Math.round(beforeRatio * Math.max(0, afterPages - 1));
+            }
+
+            target = Math.max(1, Math.min(afterPages, target));
+
+            // In two-page mode, prefer a valid spread page rather than cover
+            // when restoring a position that was already inside the book.
+            if(!folded && beforePage > 1 && target <= 1 && afterPages > 2){
+              target = 2;
+            }
+
+            flipEl.turn('page', target);
+            try{ flipEl.turn('resize'); }catch(e){}
+
+            updateChrome();
+            syncBookmarkButton();
+            saveCurrentProgress();
+          }catch(e){}
+        };
+
+        // Android rotation often reports two viewport sizes in quick succession.
+        // Restore after the immediate layout AND once more after it settles.
+        requestAnimationFrame(function(){
+          requestAnimationFrame(restoreAfterLayoutChange);
+        });
+        setTimeout(restoreAfterLayoutChange, 120);
+        setTimeout(restoreAfterLayoutChange, 360);
+
       }else{
         applyDisplay();
       }
@@ -2309,4 +2383,4 @@
     boot();
   }
 })();
-      </script>
+  </script>
