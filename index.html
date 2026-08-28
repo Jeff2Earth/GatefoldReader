@@ -1529,7 +1529,7 @@
     var quadrantGesture = null;
     var COMMIT_DRAG_PX = 0.75; // a barely perceptible intentional horizontal motion commits
     var DRAG_GAIN_X = 12.0;    // tiny finger movement creates a very large virtual pull
-    var DRAG_GAIN_Y = 2.0;
+    var DRAG_GAIN_Y = 1.0;
     var INITIAL_CURL_PX = 18;  // visible corner grab immediately on touch
     var AUTO_PULL_RATIO = 0.58; // once committed, jump curl well past the page midpoint
     var TOOLBAR_STRIP_PX = 30; // nearly the entire page surface is a turn target
@@ -1598,12 +1598,18 @@
 
         $page.flip('_eventStart', syntheticTouchEvent(sx,sy));
 
-        // Give immediate visual feedback at the selected corner. The user's
-        // physical touch can be anywhere in that quadrant; from here on we
-        // translate their movement into a virtual pull that starts at the
-        // actual page corner.
+        // Start Turn.js using the required logical corner, but immediately
+        // move the visible fold to the SAME vertical level as the user's
+        // actual finger. This keeps the giant grab area while making the curl
+        // appear where the user is really pulling instead of up/down in the
+        // literal corner.
+        var touchY = Math.max(
+          parentOffset.top + 14,
+          Math.min(parentOffset.top + ph - 14, e.pageY)
+        );
+
         var initialX = sx + (wantRight ? -INITIAL_CURL_PX : INITIAL_CURL_PX);
-        $page.flip('_eventMove', syntheticTouchEvent(initialX,sy));
+        $page.flip('_eventMove', syntheticTouchEvent(initialX,touchY));
 
         quadrantGesture = {
           pointerId:e.pointerId,
@@ -1616,7 +1622,7 @@
           lastX:e.clientX,
           lastY:e.clientY,
           virtualStartX:sx,
-          virtualStartY:sy,
+          virtualStartY:touchY,
           pageW:pw,
           pageH:ph,
           committed:false,
@@ -1666,9 +1672,9 @@
           var forcedX = g.virtualStartX +
             (g.wantRight ? -1 : 1) * (g.pageW * AUTO_PULL_RATIO);
 
-          // Keep the chosen top/bottom character of the curl.
-          var forcedY = g.virtualStartY +
-            (g.wantBottom ? -1 : 1) * Math.min(g.pageH * 0.08, 42);
+          // Keep the fold at the user's actual pull height. Do NOT shove it
+          // toward the literal top/bottom corner after commitment.
+          var forcedY = g.virtualStartY;
 
           try{
             g.page.flip('_eventMove', syntheticTouchEvent(forcedX,forcedY));
@@ -2437,4 +2443,4 @@
     boot();
   }
 })();
-      </script>
+        </script>
