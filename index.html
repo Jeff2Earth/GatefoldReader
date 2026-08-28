@@ -214,22 +214,24 @@
   body.gf-night .turn-page, body.gf-night .tpage{background:#171717!important;}
 
   #gf-bookmark-rail{
-    position:fixed;right:0;top:18%;z-index:9994;
+    position:fixed;right:0;top:22%;z-index:9994;
     display:none;flex-direction:column;gap:7px;align-items:flex-end;
     pointer-events:none;
   }
   body.gf-reading-full #gf-bookmark-rail{display:flex;}
   .gf-bookmark-tab{
-    pointer-events:auto;min-width:42px;height:32px;padding:0 8px 0 10px;
-    border:1px solid rgba(198,161,91,.55);border-right:0;
-    border-radius:12px 0 0 12px;background:rgba(27,35,64,.92);
-    color:#f2e6c9;font:600 10px var(--font-ui);letter-spacing:.02em;
-    box-shadow:0 3px 10px rgba(0,0,0,.28);cursor:pointer;
+    pointer-events:auto;width:18px;min-width:18px;height:25px;padding:0;
+    border:1px solid rgba(198,161,91,.62);border-right:0;
+    border-radius:7px 0 0 7px;background:rgba(27,35,64,.88);
+    color:#f2e6c9;font:600 8px var(--font-ui);
+    box-shadow:0 2px 7px rgba(0,0,0,.24);cursor:pointer;
     display:flex;align-items:center;justify-content:center;
-    backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+    opacity:.76;
+    backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
   }
   .gf-bookmark-tab.active{
-    min-width:50px;border-color:rgba(198,161,91,.9);color:var(--gilt);
+    width:23px;min-width:23px;opacity:1;
+    border-color:rgba(198,161,91,.9);color:var(--gilt);
   }
 </style>
 <script>
@@ -886,6 +888,194 @@
     var bookTitle = '';
     var currentSource = null;
 
+    // ---------- persistent app / library state ----------
+    // Preferences and progress live in localStorage.
+    // The actual last-opened book Blob lives in IndexedDB so Gatefold can
+    // reopen EPUB/PDF/DOCX/TXT automatically after the app is closed.
+    var currentBookId = '';
+    var pendingRestoreProgress = null;
+
+    var APP_SETTINGS_KEY = 'gatefold.app.settings.v3';
+    var LAST_BOOK_KEY = 'gatefold.lastBookId.v3';
+    var BOOK_PROGRESS_PREFIX = 'gatefold.progress.v3.';
+    var BOOK_DB_NAME = 'gatefold-reader-library';
+    var BOOK_DB_VERSION = 1;
+    var BOOK_STORE = 'books';
+
+    function safeJsonParse(raw, fallback){
+      try{ return raw ? JSON.parse(raw) : fallback; }catch(e){ return fallback; }
+    }
+
+    function loadAppSettings(){
+      try{ return safeJsonParse(localStorage.getItem(APP_SETTINGS_KEY), {}) || {}; }
+      catch(e){ return {}; }
+    }
+
+    function saveAppSettings(){
+      try{
+        localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify({
+          folded:!!folded,
+          readingMode:!!readingMode,
+          soundOn:!!soundOn,
+          fontScale:+fontScale || 1,
+          night:document.body.classList.contains('gf-night')
+        }));
+      }catch(e){}
+    }
+
+    function makeBookId(file){
+      var name = String((file && file.name) || 'Untitled');
+      var size = Number((file && file.size) || 0);
+      var lm = Number((file && file.lastModified) || 0);
+      return (name+'|'+size+'|'+lm).toLowerCase();
+    }
+
+    function openBookDb(){
+      return new Promise(function(resolve,reject){
+        if(!window.indexedDB){
+          reject(new Error('IndexedDB unavailable'));
+          return;
+        }
+        var req = indexedDB.open(BOOK_DB_NAME, BOOK_DB_VERSION);
+        req.onupgradeneeded = function(){
+          var db = req.result;
+          if(!db.objectStoreNames.contains(BOOK_STORE)){
+            db.createObjectStore(BOOK_STORE, {keyPath:'id'});
+          }
+        };
+        req.onsuccess = function(){ resolve(req.result); };
+        req.onerror = function(){ reject(req.error || new Error('Could not open book database')); };
+      });
+    }
+
+    function storeBookFile(file, bookId){
+      return openBookDb().then(function(db){
+        return new Promise(function(resolve,reject){
+          var tx = db.transaction(BOOK_STORE,'readwrite');
+          tx.objectStore(BOOK_STORE).put({
+            id:bookId,
+            name:file.name || 'Untitled',
+            type:file.type || '',
+            size:file.size || 0,
+            lastModified:file.lastModified || 0,
+            blob:file,
+            savedAt:Date.now()
+          });
+          tx.oncomplete = function(){ try{db.close();}catch(e){} resolve(); };
+          tx.onerror = function(){ try{db.close();}catch(e){} reject(tx.error); };
+          tx.onabort = function(){ try{db.close();}catch(e){} reject(tx.error); };
+        });
+      });
+    }
+
+    function getStoredBook(bookId){
+      return openBookDb().then(function(db){
+        return new Promise(function(resolve,reject){
+          var tx = db.transaction(BOOK_STORE,'readonly');
+          var req = tx.objectStore(BOOK_STORE).get(bookId);
+          req.onsuccess = function(){
+            var row = req.result || null;
+            try{db.close();}catch(e){}
+            resolve(row);
+          };
+          req.onerror = function(){
+            try{db.close();}catch(e){}
+            reject(req.error);
+          };
+        });
+      });
+    }
+
+    function progressKey(bookId){
+      return BOOK_PROGRESS_PREFIX + bookId;
+    }
+
+    function getSavedProgress(bookId){
+      try{
+        return safeJsonParse(localStorage.getItem(progressKey(bookId)), null);
+      }catch(e){
+        return null;
+      }
+    }
+
+    function saveCurrentProgress(){
+      if(!currentBookId || !flipEl) return;
+      try{
+        var page = flipEl.turn('page');
+        var pages = flipEl.turn('pages');
+        if(!page || !pages) return;
+
+        localStorage.setItem(progressKey(currentBookId), JSON.stringify({
+          page:page,
+          pages:pages,
+          ratio:pages > 1 ? (page-1)/(pages-1) : 0,
+          title:bookTitle || '',
+          savedAt:Date.now()
+        }));
+        localStorage.setItem(LAST_BOOK_KEY, currentBookId);
+      }catch(e){}
+    }
+
+    function restorePageAfterBuild(){
+      if(!pendingRestoreProgress || !flipEl) return;
+
+      var saved = pendingRestoreProgress;
+      pendingRestoreProgress = null;
+
+      setTimeout(function(){
+        try{
+          var total = flipEl.turn('pages');
+          var target = Number(saved.page) || 1;
+
+          // If screen size/font/fold mode changed the number of pages,
+          // restore the same approximate reading position instead.
+          if(saved.pages && total && Number(saved.pages) !== Number(total) && isFinite(saved.ratio)){
+            target = 1 + Math.round(
+              Math.max(0,Math.min(1,Number(saved.ratio))) * Math.max(0,total-1)
+            );
+          }
+
+          target = Math.max(1,Math.min(total,target));
+          flipEl.turn('page',target);
+          updateChrome();
+          syncBookmarkButton();
+        }catch(e){}
+      }, 140);
+    }
+
+    function restoreLastBook(){
+      var lastId = '';
+      try{ lastId = localStorage.getItem(LAST_BOOK_KEY) || ''; }catch(e){}
+      if(!lastId) return Promise.resolve(false);
+
+      return getStoredBook(lastId).then(function(row){
+        if(!row || !row.blob) return false;
+
+        var restoredFile;
+        try{
+          restoredFile = new File([row.blob], row.name || 'Book', {
+            type:row.type || row.blob.type || '',
+            lastModified:row.lastModified || Date.now()
+          });
+        }catch(e){
+          restoredFile = row.blob;
+          try{ Object.defineProperty(restoredFile,'name',{value:row.name || 'Book'}); }catch(err){}
+        }
+
+        currentBookId = lastId;
+        pendingRestoreProgress = getSavedProgress(lastId);
+        showLoadStatus('Reopening “'+(row.name || 'last book')+'”…');
+        handleFile(restoredFile, {
+          bookId:lastId,
+          skipStore:true,
+          restoring:true
+        });
+        return true;
+      }).catch(function(){
+        return false;
+      });
+    }
+
     function buildRunningHeads(pageBlocks, fallbackTitle){
       var heads = [];
       var currentHead = fallbackTitle || '';
@@ -972,7 +1162,7 @@
         width: folded ? FOLDED_W : UNFOLDED_W,
         height: folded ? FOLDED_H : UNFOLDED_H,
         display: folded ? 'single' : 'double',
-        duration: reduced ? 1 : 1100,
+        duration: reduced ? 1 : 1650,
         acceleration: true,
         gradients: true,
         elevation: 50,
@@ -995,6 +1185,7 @@
           turned: function(){
             updateChrome();
             syncBookmarkButton();
+            saveCurrentProgress();
             if(performance.now()-lastGestureTime < 420){
               playFlipAccent(lastGestureSpeed);
             }
@@ -1007,6 +1198,7 @@
       enlargePeelGrabZones();
       updateChrome();
       syncBookmarkButton();
+      restorePageAfterBuild();
     }
 
     function enlargePeelGrabZones(){
@@ -1016,16 +1208,18 @@
       // Make it much larger so you can begin the peel well inboard from the
       // Android edge-gesture area while retaining the true finger-following curl.
       var pageW = folded ? FOLDED_W : Math.max(1, UNFOLDED_W/2);
-      // Very generous corner zone: on a phone this reaches well inboard from
-      // the OS back-gesture edge while preserving Turn.js's true peel physics.
-      var cornerSize = Math.round(Math.min(340, Math.max(190, pageW * 0.68)));
+
+      // Extra-large invisible pull region. Turn.js is still doing a real
+      // finger-following peel, but the gesture can begin far inboard from the
+      // Android edge-navigation zone.
+      var cornerSize = Math.round(Math.min(430, Math.max(230, pageW * 0.82)));
 
       try{
         flipEl.children().each(function(){
           var $page = $(this);
           try{
             if($page.data('f')){
-              $page.flip('options', { cornerSize:cornerSize });
+              $page.flip('options', { cornerSize:cornerSize, duration:(reduced ? 1 : 1650) });
             }
           }catch(e){}
         });
@@ -1035,7 +1229,7 @@
           var $page = $(this);
           try{
             if($page.data('f')){
-              $page.flip('options', { cornerSize:cornerSize });
+              $page.flip('options', { cornerSize:cornerSize, duration:(reduced ? 1 : 1650) });
             }
           }catch(e){}
         });
@@ -1099,8 +1293,25 @@
         .map(function(s){ return s.replace(/\s+/g,' ').trim(); })
         .filter(Boolean);
     }
-    function handleFile(file){
+    function handleFile(file, options){
+      options = options || {};
+
       var name = file.name || 'Untitled';
+      var incomingBookId = options.bookId || makeBookId(file);
+      currentBookId = incomingBookId;
+
+      if(!options.restoring){
+        pendingRestoreProgress = getSavedProgress(incomingBookId);
+      }
+
+      if(!options.skipStore){
+        storeBookFile(file, incomingBookId).then(function(){
+          try{ localStorage.setItem(LAST_BOOK_KEY, incomingBookId); }catch(e){}
+        }).catch(function(){});
+      }else{
+        try{ localStorage.setItem(LAST_BOOK_KEY, incomingBookId); }catch(e){}
+      }
+
       var m = name.match(/\.([^.]+)$/);
       var ext = m ? m[1].toLowerCase() : '';
       var title = name.replace(/\.[^.]+$/, '');
@@ -1319,12 +1530,15 @@
       }else{
         applyDisplay();
       }
+      saveAppSettings();
+      saveCurrentProgress();
     });
     soundBtn.addEventListener('click', function(){
       soundOn = !soundOn;
       soundIcon.innerHTML = soundOn ? '&#9834;' : '&#9834;&#8402;';
       soundBtn.setAttribute('aria-label', soundOn ? 'Turn page sound off' : 'Turn page sound on');
       soundBtn.style.opacity = soundOn ? '1' : '.5';
+      saveAppSettings();
     });
     window.addEventListener('keydown', function(e){
       if(e.key === 'ArrowRight'){ flipEl.turn('next'); }
@@ -1375,6 +1589,25 @@
 
     var readingMode = true;
     var fontScale = 1;
+
+    // Restore preferences before the first fullscreen layout.
+    var savedAppSettings = loadAppSettings();
+    if(typeof savedAppSettings.folded === 'boolean') folded = savedAppSettings.folded;
+    if(typeof savedAppSettings.readingMode === 'boolean') readingMode = savedAppSettings.readingMode;
+    if(typeof savedAppSettings.soundOn === 'boolean') soundOn = savedAppSettings.soundOn;
+
+    if(savedAppSettings.fontScale){
+      fontScale = Math.max(.78, Math.min(1.45, Number(savedAppSettings.fontScale) || 1));
+    }
+
+    if(savedAppSettings.night){
+      document.body.classList.add('gf-night');
+    }
+
+    foldIcon.textContent = folded ? '\u2707' : '\u25A3';
+    foldLabel.textContent = folded ? 'Unfold' : 'Fold';
+    soundIcon.innerHTML = soundOn ? '&#9834;' : '&#9834;&#8402;';
+    soundBtn.style.opacity = soundOn ? '1' : '.5';
 
     // When installed as a PWA, Android/Chrome already owns the app window.
     // Re-entering the browser Fullscreen API on top of that can cause transient
@@ -1575,6 +1808,7 @@
         readingMode = true;
         applyReadingMode();
         fullscreenBtn.textContent = 'Fullscreen';
+        saveAppSettings();
         closeToolbar();
         return;
       }
@@ -1603,6 +1837,7 @@
       }catch(e){}
 
       setTimeout(applyReadingMode,140);
+      saveAppSettings();
       closeToolbar();
     });
 
@@ -1629,15 +1864,20 @@
     fontUpBtn.addEventListener('click', function(){
       fontScale = Math.min(1.45, +(fontScale+.08).toFixed(2));
       applyFontScale();
+      saveAppSettings();
+      saveCurrentProgress();
     });
 
     fontDownBtn.addEventListener('click', function(){
       fontScale = Math.max(.78, +(fontScale-.08).toFixed(2));
       applyFontScale();
+      saveAppSettings();
+      saveCurrentProgress();
     });
 
     themeBtn.addEventListener('click', function(){
       document.body.classList.toggle('gf-night');
+      saveAppSettings();
       closeToolbar();
     });
 
@@ -1691,10 +1931,29 @@
     // enlargePeelGrabZones() makes the invisible corner regions much larger,
     // allowing the gesture to begin safely away from Android's extreme edge.
 
-    // Start in frameless reading mode.
+    // Start in the saved reading mode and reopen the last book.
+    applyFontScale();
     var initialVp = getViewportSize();
     lastStableViewport = {w:initialVp.w,h:initialVp.h};
-    setTimeout(applyReadingMode, 80);
+
+    setTimeout(function(){
+      applyReadingMode();
+      restoreLastBook();
+    }, 100);
+
+    // Save on app background/close. pagehide is the most reliable close-like
+    // signal for an installed Android PWA.
+    window.addEventListener('pagehide', function(){
+      saveCurrentProgress();
+      saveAppSettings();
+    });
+
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState === 'hidden'){
+        saveCurrentProgress();
+        saveAppSettings();
+      }
+    });
 
     // PWA service worker.
     if('serviceWorker' in navigator){
@@ -1712,4 +1971,4 @@
     boot();
   }
 })();
-    </script>
+  </script>
