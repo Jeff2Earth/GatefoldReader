@@ -97,7 +97,7 @@
 
     <div id="gf-screen" style="position:relative;">
       <div id="flipbook"></div>
-      <div id="gf-swipe-overlay" style="position:absolute;inset:0;z-index:60;touch-action:none;cursor:grab;"></div>
+      <div id="gf-swipe-overlay" style="position:absolute;top:0;left:-14px;right:-14px;bottom:-14px;z-index:60;touch-action:none;cursor:grab;"></div>
     </div>
   </div>
 
@@ -1759,6 +1759,29 @@
       e.stopPropagation();
     }
 
+    function commitTurnJsPage(g){
+      if(!g || !g.page || !g.page.length) return false;
+
+      try{
+        var fd = g.page.data().f;
+        if(!fd || !fd.opts || !fd.opts.turn) return false;
+
+        var turn = fd.opts.turn;
+        var td = turn.data();
+
+        // This is the critical Turn.js 3 step normally performed by its own
+        // _released() handler. Without tpage, turnPage() can animate the curl
+        // beautifully and then restore the SAME page when the animation ends.
+        td.tpage = fd.opts.next;
+        turn.turn('update');
+
+        g.page.flip('turnPage', g.corner);
+        return true;
+      }catch(err){
+        return false;
+      }
+    }
+
     function endQuadrantTurn(e, cancelled){
       var g = quadrantGesture;
       if(!g || (e.pointerId !== undefined && g.pointerId !== e.pointerId)) return;
@@ -1790,13 +1813,28 @@
             g.page.flip('_eventMove', syntheticTouchEvent(finishX,finishY));
           }catch(e){}
 
-          try{
-            g.page.flip('turnPage', g.corner);
-          }catch(e){
+          // Commit the target page in Turn.js BEFORE asking it to finish
+          // the curl. This is what its native release handler does internally.
+          var beforeBookPage = 0;
+          try{ beforeBookPage = flipEl.turn('page') || 0; }catch(e){}
+
+          if(!commitTurnJsPage(g)){
             try{
               if(g.wantRight) flipEl.turn('next');
               else flipEl.turn('previous');
             }catch(e2){}
+          }else{
+            // Belt-and-suspenders check: after the normal Turn.js finish
+            // animation, verify that its logical page actually changed.
+            setTimeout(function(){
+              try{
+                var nowPage = flipEl.turn('page') || 0;
+                if(beforeBookPage && nowPage === beforeBookPage){
+                  if(g.wantRight) flipEl.turn('next');
+                  else flipEl.turn('previous');
+                }
+              }catch(e){}
+            }, 900);
           }
         }
       }catch(err){
@@ -2654,4 +2692,4 @@
     boot();
   }
 })();
-  </script>
+</script>
