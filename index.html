@@ -30,12 +30,9 @@
   min-height:calc(100vh - 8px); box-sizing:border-box;
 ">
 
-  <div id="gf-top-hit" aria-label="Open reader controls" style="
-    position:fixed;left:50%;top:max(3px,env(safe-area-inset-top));transform:translateX(-50%);
-    width:64px;height:18px;z-index:9997;border-radius:0 0 14px 14px;
-    background:rgba(11,13,24,.72);border:1px solid rgba(198,161,91,.22);border-top:0;
-    color:rgba(198,161,91,.85);font:14px/16px sans-serif;text-align:center;
-    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);">⌄</div>
+  <div id="gf-top-hit" aria-hidden="true" style="
+    position:fixed;left:0;right:0;top:0;height:42px;z-index:9997;
+    background:transparent;"></div>
 
   <div id="gf-toolbar" style="
     position:fixed;left:0;right:0;top:0;z-index:9998;
@@ -52,8 +49,6 @@
         background:rgba(255,255,255,.06);color:#eee7d5;font:12px var(--font-ui);outline:none;">
       <button id="gf-toolbar-go" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Go</button>
-      <button id="gf-toolbar-load" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
-        background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Load File</button>
       <button id="gf-font-down" aria-label="Decrease font size" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:var(--gilt);">A−</button>
       <button id="gf-font-up" aria-label="Increase font size" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
@@ -96,6 +91,7 @@
 
     <div id="gf-screen" style="position:relative;">
       <div id="flipbook"></div>
+      <div id="gf-swipe-overlay" style="position:absolute;inset:0;z-index:20;touch-action:none;cursor:grab;"></div>
     </div>
   </div>
 
@@ -158,6 +154,7 @@
   #flipbook .tpage { overflow:hidden; background:var(--parchment); }
   #flipbook .tpage.odd .sheet--text { padding-right:5%; }
   #flipbook .tpage.even .sheet--text { padding-left:5%; }
+  #flipbook { pointer-events:none; }
 
   #gf-prev-btn:disabled, #gf-next-btn:disabled { opacity:.3; cursor:default; }
   #gf-load-btn:hover { border-color:rgba(198,161,91,.7); color:var(--gilt); }
@@ -182,6 +179,7 @@
   }
   body.gf-reading-full #gf-screen{
     position:absolute!important;inset:0!important;width:100vw!important;height:100dvh!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;
   }
   body.gf-reading-full #flipbook{margin:auto;}
   body.gf-reading-full .gf-root > div[style*="display:flex; align-items:center; gap:14px;"],
@@ -197,19 +195,6 @@
   body.gf-night .sheet--text{background:#171717!important;color:#e9e4d8!important;}
   body.gf-night .running-head, body.gf-night .folio{color:rgba(233,228,216,.55)!important;}
   body.gf-night .turn-page, body.gf-night .tpage{background:#171717!important;}
-
-  body.gf-reading-full #gf-device,
-  body.gf-reading-full #gf-screen,
-  body.gf-reading-full #flipbook{
-    box-sizing:border-box!important;
-  }
-  body.gf-reading-full #flipbook{
-    position:absolute!important;
-    left:0!important;top:0!important;
-    margin:0!important;
-  }
-  body.gf-reading-full #gf-device::before,
-  body.gf-reading-full #gf-device::after{display:none!important;}
 </style>
 <script>
 (function(){
@@ -551,28 +536,25 @@
       return pages.length ? pages : [''];
     }
 
-    function paginateParagraphsFast(paragraphs, chapterLabel){
-      /*
-       * Large EPUBs need to open quickly, but pure word-count pagination can
-       * clip the last lines because paragraph margins and real line wrapping
-       * vary.  Build pages in coarse chunks, then validate each chunk against
-       * the actual rendered page and split only chunks that truly overflow.
-       */
+    function paginateParagraphsFast(paragraphs){
+      // Estimate capacity from the current physical page area. Keep this
+      // deliberately conservative so text never runs off the bottom.
       var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
       var pageH = folded ? FOLDED_H : UNFOLDED_H;
       var areaScale = (pageW * pageH) / (250 * 430);
-
-      // Conservative first estimate; actual rendered validation below is final.
-      var TARGET_WORDS = Math.max(90, Math.min(260, Math.round(118 * areaScale)));
-      var roughPages = [];
-      var pageParts = [];
+      var TARGET_WORDS = Math.max(82, Math.min(210, Math.round(108 * areaScale)));
+      var MAX_WORDS = Math.max(TARGET_WORDS + 14, Math.min(235, Math.round(124 * areaScale)));
+      var pages = [];
+      var pageHtml = '';
       var pageWords = 0;
+      var firstPage = true;
 
-      function flushRough(){
-        if(pageParts.length){
-          roughPages.push(pageParts.slice());
-          pageParts = [];
+      function flush(){
+        if(pageHtml){
+          pages.push(pageHtml);
+          pageHtml = '';
           pageWords = 0;
+          firstPage = false;
         }
       }
 
@@ -581,97 +563,38 @@
         if(!raw) continue;
         var words = raw.split(/\s+/).filter(Boolean);
 
-        // Long source paragraphs are split into manageable chunks.
-        if(words.length > TARGET_WORDS){
-          var off = 0;
-          while(off < words.length){
-            var room = Math.max(50, TARGET_WORDS-pageWords);
-            var take = Math.min(room, words.length-off);
-            if(pageWords && pageWords+take > TARGET_WORDS) flushRough();
-            pageParts.push(words.slice(off,off+take).join(' '));
+        // Split only genuinely long source paragraphs.
+        if(words.length > MAX_WORDS){
+          var offset = 0;
+          while(offset < words.length){
+            var room = Math.max(40, TARGET_WORDS - pageWords);
+            var take = Math.min(room, words.length - offset);
+            var chunk = words.slice(offset, offset + take).join(' ');
+
+            if(pageWords && pageWords + take > MAX_WORDS) flush();
+
+            pageHtml += wrapParagraphHtml(chunk, firstPage && pageWords===0);
             pageWords += take;
-            off += take;
-            if(pageWords >= TARGET_WORDS) flushRough();
+            offset += take;
+
+            if(pageWords >= TARGET_WORDS) flush();
           }
-        }else{
-          if(pageWords && pageWords+words.length > TARGET_WORDS) flushRough();
-          pageParts.push(raw);
-          pageWords += words.length;
-          if(pageWords >= TARGET_WORDS) flushRough();
+          continue;
+        }
+
+        if(pageWords && pageWords + words.length > MAX_WORDS){
+          flush();
+        }
+
+        pageHtml += wrapParagraphHtml(raw, firstPage && pageWords===0);
+        pageWords += words.length;
+
+        if(pageWords >= TARGET_WORDS){
+          flush();
         }
       }
-      flushRough();
 
-      var pages = [];
-
-      function partsHtml(parts, dropcap){
-        var h = '';
-        for(var k=0;k<parts.length;k++){
-          h += wrapParagraphHtml(parts[k], !!dropcap && k===0);
-        }
-        return h;
-      }
-
-      function splitToFit(parts, isFirstPage){
-        if(!parts.length) return;
-
-        var whole = partsHtml(parts, isFirstPage);
-        if(fitsInPage(chapterLabel, whole)){
-          pages.push(whole);
-          return;
-        }
-
-        // Prefer splitting between source paragraphs/verses.
-        if(parts.length > 1){
-          var lo = 1, hi = parts.length-1, best = 0;
-          while(lo <= hi){
-            var mid = Math.floor((lo+hi)/2);
-            var candidate = partsHtml(parts.slice(0,mid), isFirstPage);
-            if(fitsInPage(chapterLabel, candidate)){
-              best = mid;
-              lo = mid+1;
-            }else{
-              hi = mid-1;
-            }
-          }
-
-          if(best > 0){
-            pages.push(partsHtml(parts.slice(0,best), isFirstPage));
-            splitToFit(parts.slice(best), false);
-            return;
-          }
-        }
-
-        // One paragraph/verse still overflows: split by words with measured
-        // binary search. This guarantees the page cannot truncate text.
-        var words = String(parts[0] || '').split(/\s+/).filter(Boolean);
-        if(words.length <= 1){
-          pages.push(partsHtml(parts, isFirstPage));
-          return;
-        }
-
-        var low = 1, high = words.length, bestWords = 1;
-        while(low <= high){
-          var midw = Math.floor((low+high)/2);
-          var cand = wrapParagraphHtml(words.slice(0,midw).join(' '), isFirstPage);
-          if(fitsInPage(chapterLabel, cand)){
-            bestWords = midw;
-            low = midw+1;
-          }else{
-            high = midw-1;
-          }
-        }
-
-        pages.push(wrapParagraphHtml(words.slice(0,bestWords).join(' '), isFirstPage));
-        var remainder = words.slice(bestWords).join(' ');
-        if(remainder) splitToFit([remainder], false);
-        if(parts.length > 1) splitToFit(parts.slice(1), false);
-      }
-
-      for(var rp=0;rp<roughPages.length;rp++){
-        splitToFit(roughPages[rp], pages.length===0);
-      }
-
+      flush();
       return pages.length ? pages : [''];
     }
 
@@ -684,7 +607,7 @@
         if(totalWords > 12000) break;
       }
       return totalWords > 12000
-        ? paginateParagraphsFast(paragraphs, chapterLabel)
+        ? paginateParagraphsFast(paragraphs)
         : paginateParagraphsMeasured(paragraphs, chapterLabel);
     }
 
@@ -1314,7 +1237,6 @@
     var toolbarClose = document.getElementById('gf-toolbar-close');
     var toolbarRef = document.getElementById('gf-toolbar-ref');
     var toolbarGo = document.getElementById('gf-toolbar-go');
-    var toolbarLoad = document.getElementById('gf-toolbar-load');
     var toolbarFold = document.getElementById('gf-toolbar-fold');
     var toolbarSound = document.getElementById('gf-toolbar-sound');
     var fullscreenBtn = document.getElementById('gf-fullscreen-btn');
@@ -1332,17 +1254,17 @@
       document.body.classList.toggle('gf-reading-full', readingMode);
       computeResponsiveSizes();
       if(readingMode){
-        // True edge-to-edge reading canvas. Do not preserve the old mock-device
-        // aspect ratio; the paper should use the phone/tablet screen itself.
-        var vw = Math.max(280, window.innerWidth || document.documentElement.clientWidth || 800);
-        var vh = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 700);
+        var vw = window.innerWidth || 800;
+        var vh = window.innerHeight || 700;
+        var spreadW = folded ? Math.min(vw, vh*.66) : vw;
+        var spreadH = folded ? vh : Math.min(vh, vw/1.42);
 
         if(folded){
-          FOLDED_W = Math.floor(vw);
+          FOLDED_W = Math.floor(spreadW);
           FOLDED_H = Math.floor(vh);
         }else{
           UNFOLDED_W = Math.floor(vw);
-          UNFOLDED_H = Math.floor(vh);
+          UNFOLDED_H = Math.floor(spreadH);
         }
       }
 
@@ -1386,13 +1308,6 @@
         e.preventDefault();
         toolbarGo.click();
       }
-    });
-
-    toolbarLoad.addEventListener('click', function(){
-      closeToolbar();
-      // Use the existing hidden file input, so EPUB/TXT/DOCX/PDF all follow
-      // the reader's normal import path.
-      fileInput.click();
     });
 
     toolbarFold.addEventListener('click', function(){
@@ -1468,6 +1383,41 @@
       }
     }, true);
 
+    // ---------- swipe/tap anywhere to turn a page ----------
+    // Turn.js only starts its own drag right at a page corner, which is exactly
+    // where OS edge-gesture zones tend to live. #flipbook has pointer-events:none
+    // (see CSS) so turn.js's native corner drag never receives a touch at all;
+    // this overlay owns 100% of the gesture instead and drives turn.js
+    // programmatically, so a swipe or tap anywhere on the page works safely.
+    var swipeOverlay = document.getElementById('gf-swipe-overlay');
+    var swipeStartX = null, swipeStartY = null, swipeStartT = 0, swipeMoved = false;
+    swipeOverlay.addEventListener('pointerdown', function(e){
+      swipeStartX = e.clientX; swipeStartY = e.clientY; swipeStartT = Date.now(); swipeMoved = false;
+      try{ swipeOverlay.setPointerCapture(e.pointerId); }catch(err){}
+    });
+    swipeOverlay.addEventListener('pointermove', function(e){
+      if(swipeStartX===null) return;
+      if(Math.abs(e.clientX-swipeStartX) > 6 || Math.abs(e.clientY-swipeStartY) > 6){ swipeMoved = true; }
+    });
+    swipeOverlay.addEventListener('pointerup', function(e){
+      if(swipeStartX===null) return;
+      var dx = e.clientX - swipeStartX;
+      var dy = e.clientY - swipeStartY;
+      var dt = Date.now() - swipeStartT;
+      var startX = swipeStartX;
+      swipeStartX = null;
+      if(!flipEl) return;
+      if(Math.abs(dx) > 36 && Math.abs(dx) > Math.abs(dy) * 1.3 && dt < 800){
+        if(dx < 0){ flipEl.turn('next'); } else { flipEl.turn('previous'); }
+      } else if(!swipeMoved && dt < 400){
+        var r = swipeOverlay.getBoundingClientRect();
+        if((e.clientY - r.top) < Math.max(44, r.height*.12)) return;
+        var localX = startX - r.left;
+        if(localX < r.width/2){ flipEl.turn('previous'); } else { flipEl.turn('next'); }
+      }
+    });
+    swipeOverlay.addEventListener('pointercancel', function(){ swipeStartX = null; });
+
     // Start in frameless reading mode.
     setTimeout(applyReadingMode, 60);
 
@@ -1487,4 +1437,4 @@
     boot();
   }
 })();
-</script>
+                                          </script>
