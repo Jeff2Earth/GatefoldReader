@@ -97,7 +97,7 @@
 
     <div id="gf-screen" style="position:relative;">
       <div id="flipbook"></div>
-      <div id="gf-swipe-overlay" style="position:absolute;inset:0;z-index:20;touch-action:none;cursor:grab;"></div>
+      <div id="gf-swipe-overlay" style="position:absolute;inset:0;z-index:60;touch-action:none;cursor:grab;"></div>
     </div>
   </div>
 
@@ -1527,12 +1527,13 @@
     // corner into Turn.js while retaining its real page-curl physics.
     var quadrantOverlay = document.getElementById('gf-swipe-overlay');
     var quadrantGesture = null;
-    var COMMIT_DRAG_PX = 0.75; // a barely perceptible intentional horizontal motion commits
-    var DRAG_GAIN_X = 12.0;    // tiny finger movement creates a very large virtual pull
+    var COMMIT_DRAG_PX = 1.25; // tiny but deliberate horizontal movement latches the turn
+    var DRAG_GAIN_X = 16.0;    // very short finger travel produces a strong page pull
     var DRAG_GAIN_Y = 1.0;
-    var INITIAL_CURL_PX = 18;  // visible corner grab immediately on touch
-    var AUTO_PULL_RATIO = 0.58; // once committed, jump curl well past the page midpoint
-    var TOOLBAR_STRIP_PX = 30; // nearly the entire page surface is a turn target
+    var INITIAL_CURL_PX = 22;  // visible grab immediately on touch
+    var AUTO_PULL_RATIO = 0.82; // latched turn continues most of the way across automatically
+    var TOOLBAR_STRIP_PX = 24; // almost the entire readable screen is a turn target
+    var AUTO_GLIDE_MS = 170;   // smooth continuation after the tiny swipe commits
 
     function pageForQuadrant(wantRight){
       try{
@@ -1639,6 +1640,41 @@
       }
     }
 
+    function startLatchedAutoPull(g){
+      if(!g || g.autoPullStarted) return;
+      g.autoPullStarted = true;
+
+      var startTime = performance.now();
+      var startX = g.lastVirtualX;
+      if(typeof startX !== 'number') startX = g.virtualStartX;
+
+      var targetX = g.virtualStartX +
+        (g.wantRight ? -1 : 1) * (g.pageW * AUTO_PULL_RATIO);
+
+      function glide(now){
+        if(!g || g.finished) return;
+
+        var p = Math.max(0,Math.min(1,(now-startTime)/AUTO_GLIDE_MS));
+        // smoothstep gives the page a natural acceleration/deceleration
+        var eased = p*p*(3-2*p);
+        var x = startX + (targetX-startX)*eased;
+
+        // Keep the curl aligned with the user's vertical pull position.
+        var y = g.virtualStartY + (g.lastY-g.startY) * DRAG_GAIN_Y;
+
+        try{
+          g.page.flip('_eventMove', syntheticTouchEvent(x,y));
+          g.lastVirtualX = x;
+        }catch(err){}
+
+        if(p < 1 && !g.finished){
+          g.autoPullRaf = requestAnimationFrame(glide);
+        }
+      }
+
+      g.autoPullRaf = requestAnimationFrame(glide);
+    }
+
     function moveQuadrantTurn(e){
       var g = quadrantGesture;
       if(!g || g.pointerId !== e.pointerId) return;
@@ -1657,28 +1693,17 @@
 
       try{
         g.page.flip('_eventMove', syntheticTouchEvent(vx,vy));
+        g.lastVirtualX = vx;
       }catch(err){}
 
-      // Essentially any tiny horizontal movement in the natural direction
-      // commits the turn. Once committed, automatically pull the curl well
-      // inward so the user never has to stretch toward the opposite page.
+      // A tiny movement in the natural page-turn direction LATCHES the turn.
+      // After that point the page continues by itself; the user does not need
+      // to drag halfway across the display.
       if((g.wantRight && dx <= -COMMIT_DRAG_PX) ||
          (!g.wantRight && dx >= COMMIT_DRAG_PX)){
-        g.committed = true;
-
-        if(!g.autoPulled){
-          g.autoPulled = true;
-
-          var forcedX = g.virtualStartX +
-            (g.wantRight ? -1 : 1) * (g.pageW * AUTO_PULL_RATIO);
-
-          // Keep the fold at the user's actual pull height. Do NOT shove it
-          // toward the literal top/bottom corner after commitment.
-          var forcedY = g.virtualStartY;
-
-          try{
-            g.page.flip('_eventMove', syntheticTouchEvent(forcedX,forcedY));
-          }catch(err){}
+        if(!g.committed){
+          g.committed = true;
+          startLatchedAutoPull(g);
         }
       }
 
@@ -1695,20 +1720,59 @@
       try{
         var totalDx = g.lastX-g.startX;
         var totalDy = g.lastY-g.startY;
-        var tinyHorizontalIntent =
-          Math.abs(totalDx) >= 1 &&
-          Math.abs(totalDx) >= Math.abs(totalDy)*0.25;
 
-        if(!cancelled && (g.committed || tinyHorizontalIntent)){
-          // Gatefold owns the commitment threshold. Turn.js only performs the
-          // beautiful curl/finish animation once a tiny intentional pull is seen.
-          g.page.flip('turnPage', g.corner);
+        var directionalIntent =
+          (g.wantRight ? totalDx < 0 : totalDx > 0) &&
+          Math.abs(totalDx) >= COMMIT_DRAG_PX &&
+          Math.abs(totalDx) >= Math.abs(totalDy)*0.12;
+
+        // IMPORTANT: Android/Chrome can emit pointercancel near a screen edge.
+        // Once Gatefold has latched a deliberate turn, pointercancel must NOT
+        // send the page back. A latched gesture always finishes.
+        var shouldFinish = g.committed || directionalIntent;
+
+        g.finished = true;
+        if(g.autoPullRaf){
+          try{ cancelAnimationFrame(g.autoPullRaf); }catch(e){}
+        }
+
+        if(shouldFinish){
+          // Push the fold very near the far side before handing off to Turn.js.
+          // This makes a tiny physical swipe behave like a completed pull.
+          var finishX = g.virtualStartX +
+            (g.wantRight ? -1 : 1) * (g.pageW * 0.90);
+          var finishY = g.virtualStartY + totalDy * DRAG_GAIN_Y;
+
+          try{
+            g.page.flip('_eventMove', syntheticTouchEvent(finishX,finishY));
+          }catch(e){}
+
+          // Use Turn.js only for the final curl animation. Gatefold, not
+          // Turn.js, has already decided that the page must turn.
+          try{
+            g.page.flip('turnPage', g.corner);
+          }catch(e){
+            // Public-book-level fallback: guarantees the page advances even
+            // if a private Turn.js page method rejects an edge-case gesture.
+            try{
+              if(g.wantRight) flipEl.turn('next');
+              else flipEl.turn('previous');
+            }catch(e2){}
+          }
         }else{
-          // No deliberate drag: return the page smoothly.
+          // A true tap/no-drag returns the page; nothing else does.
           g.page.flip('hideFoldedPage', true);
         }
       }catch(err){
-        try{ g.page.flip('_eventEnd'); }catch(err2){}
+        // Last-resort public API fallback for a latched turn.
+        if(g && g.committed){
+          try{
+            if(g.wantRight) flipEl.turn('next');
+            else flipEl.turn('previous');
+          }catch(err2){}
+        }else{
+          try{ g.page.flip('_eventEnd'); }catch(err3){}
+        }
       }
 
       try{
@@ -1733,7 +1797,17 @@
       }, {passive:false});
 
       quadrantOverlay.addEventListener('pointercancel', function(e){
+        // Android may cancel a pointer when a finger begins near a system edge.
+        // endQuadrantTurn preserves any gesture that already latched.
         endQuadrantTurn(e,true);
+      }, {passive:false});
+
+      quadrantOverlay.addEventListener('lostpointercapture', function(e){
+        // If capture is lost after a tiny deliberate swipe, finish it rather
+        // than letting Turn.js silently retract the page.
+        if(quadrantGesture && quadrantGesture.pointerId === e.pointerId){
+          endQuadrantTurn(e,true);
+        }
       }, {passive:false});
 
       // Turn.js 3 also listens for touch events. Stop those from starting a
@@ -2536,4 +2610,4 @@
     boot();
   }
 })();
-      </script>
+          </script>
