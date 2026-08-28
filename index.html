@@ -162,6 +162,12 @@
   #flipbook .tpage.even .sheet--text { padding-left:5%; }
   #flipbook { pointer-events:auto; }
   #gf-swipe-overlay { pointer-events:none!important; }
+  body.gf-reading-full #gf-swipe-overlay{
+    pointer-events:auto!important;
+    touch-action:none!important;
+    background:transparent!important;
+    cursor:grab;
+  }
 
   #gf-prev-btn:disabled, #gf-next-btn:disabled { opacity:.3; cursor:default; }
   #gf-load-btn:hover { border-color:rgba(198,161,91,.7); color:var(--gilt); }
@@ -261,7 +267,7 @@
       var patchedAnimatef = function(point){
         if(point && point.turning){
           // Successful turn after release.
-          point.duration = 1950;
+          point.duration = 1550;
           point.easing = function(x, t, b, c, d){
             var p = Math.max(0, Math.min(1, t/d));
             p = p*p*(3 - 2*p); // smoothstep
@@ -269,7 +275,7 @@
           };
         }else if(point && point.hiding){
           // Page settling back when the pull did not commit.
-          point.duration = 1350;
+          point.duration = 1050;
           point.easing = function(x, t, b, c, d){
             var p = Math.max(0, Math.min(1, t/d));
             p = 0.5 - 0.5*Math.cos(Math.PI*p);
@@ -1196,7 +1202,7 @@
         width: folded ? FOLDED_W : UNFOLDED_W,
         height: folded ? FOLDED_H : UNFOLDED_H,
         display: folded ? 'single' : 'double',
-        duration: reduced ? 1 : 1950,
+        duration: reduced ? 1 : 1550,
         acceleration: true,
         gradients: true,
         elevation: 50,
@@ -1239,30 +1245,22 @@
     function enlargePeelGrabZones(){
       if(!flipEl || !flipEl.length) return;
 
+      // Keep Turn.js's own native corner detector sane. The real giant touch
+      // target is handled by Gatefold's quadrant gesture layer below.
       var pageW = folded ? FOLDED_W : Math.max(1, UNFOLDED_W/2);
-      var pageH = folded ? FOLDED_H : UNFOLDED_H;
-
-      // Turn.js 3 uses a square corner activation zone. To make nearly the
-      // whole side edge usable, the square must reach a little beyond the
-      // vertical midpoint. The top and bottom zones then overlap.
-      var cornerSize = Math.round(Math.min(
-        900,
-        Math.max(320, pageH * 0.56, pageW * 0.92)
-      ));
+      var cornerSize = Math.round(Math.min(180, Math.max(110, pageW * 0.30)));
 
       function applyToPage(el){
         try{
           var $page = $(el);
           var d = $page.data();
           if(d && d.f && d.f.opts){
-            // Directly update Turn.js 3's real page options.
             d.f.opts.cornerSize = cornerSize;
-            d.f.opts.duration = reduced ? 1 : 1950;
+            d.f.opts.duration = reduced ? 1 : 1550;
           }
         }catch(e){}
       }
 
-      // Active page objects held internally by Turn.js.
       try{
         var td = flipEl.data();
         if(td && td.pages){
@@ -1274,7 +1272,6 @@
         }
       }catch(e){}
 
-      // Catch current DOM page nodes too.
       flipEl.children().each(function(){ applyToPage(this); });
       flipEl.find('.turn-page').each(function(){ applyToPage(this); });
     }
@@ -1508,6 +1505,190 @@
     });
 
     // ---------- touch / paper-sound tracking ----------
+    // ---------- giant quadrant page-grab area ----------
+    // The entire visible page spread is now a page-turn target:
+    //   upper-left  -> top-left corner
+    //   lower-left  -> bottom-left corner
+    //   upper-right -> top-right corner
+    //   lower-right -> bottom-right corner
+    //
+    // We deliberately do NOT make Turn.js's cornerSize enormous. When its
+    // top/bottom and left/right corner squares overlap, the library can choose
+    // the wrong corner and actually become more restrictive. Instead, Gatefold
+    // chooses the intended corner from the touched quadrant and feeds that
+    // corner into Turn.js while retaining its real page-curl physics.
+    var quadrantOverlay = document.getElementById('gf-swipe-overlay');
+    var quadrantGesture = null;
+    var COMMIT_DRAG_PX = 8;   // tiny deliberate drag commits the turn
+    var TOOLBAR_STRIP_PX = 48; // keep only the very top strip for controls
+
+    function pageForQuadrant(wantRight){
+      try{
+        var td = flipEl.data();
+        var view = flipEl.turn('view') || [];
+        var pageNum = 0;
+
+        if(folded){
+          pageNum = view[0] || view[1] || flipEl.turn('page');
+        }else{
+          pageNum = wantRight ? (view[1] || view[0]) : (view[0] || view[1]);
+        }
+
+        if(!pageNum || !td || !td.pages || !td.pages[pageNum]) return null;
+        return td.pages[pageNum];
+      }catch(e){
+        return null;
+      }
+    }
+
+    function syntheticTouchEvent(pageX, pageY){
+      return {
+        originalEvent:{
+          touches:[{pageX:pageX,pageY:pageY}],
+          changedTouches:[{pageX:pageX,pageY:pageY}]
+        },
+        preventDefault:function(){},
+        stopPropagation:function(){}
+      };
+    }
+
+    function beginQuadrantTurn(e){
+      if(!readingMode || !quadrantOverlay || !flipEl) return false;
+
+      var r = quadrantOverlay.getBoundingClientRect();
+
+      // Preserve the top pull-down toolbar. Everything below this narrow strip
+      // belongs to page turning.
+      if((e.clientY-r.top) <= TOOLBAR_STRIP_PX){
+        return false;
+      }
+
+      var wantRight = (e.clientX-r.left) >= r.width/2;
+      var wantBottom = (e.clientY-r.top) >= r.height/2;
+      var corner = (wantBottom ? 'b' : 't') + (wantRight ? 'r' : 'l');
+      var $page = pageForQuadrant(wantRight);
+
+      if(!$page || !$page.length) return false;
+
+      try{
+        var fd = $page.data().f;
+        if(!fd || fd.disabled || $page.flip('isTurning')) return false;
+
+        var parentOffset = fd.parent.offset();
+        var pw = $page.width();
+        var ph = $page.height();
+        var inset = 7;
+
+        // Start Turn.js at the ACTUAL chosen page corner, regardless of where
+        // the user's finger is located on that quadrant.
+        var sx = parentOffset.left + (wantRight ? pw-inset : inset);
+        var sy = parentOffset.top  + (wantBottom ? ph-inset : inset);
+
+        $page.flip('_eventStart', syntheticTouchEvent(sx,sy));
+
+        // Immediately bring the curl under the user's finger. This produces
+        // the "grab anywhere and pull the page" behavior.
+        $page.flip('_eventMove', syntheticTouchEvent(e.pageX,e.pageY));
+
+        quadrantGesture = {
+          pointerId:e.pointerId,
+          page:$page,
+          corner:corner,
+          wantRight:wantRight,
+          startX:e.clientX,
+          startY:e.clientY,
+          lastX:e.clientX,
+          lastY:e.clientY,
+          committed:false
+        };
+
+        try{ quadrantOverlay.setPointerCapture(e.pointerId); }catch(err){}
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+      }catch(err){
+        quadrantGesture = null;
+        return false;
+      }
+    }
+
+    function moveQuadrantTurn(e){
+      var g = quadrantGesture;
+      if(!g || g.pointerId !== e.pointerId) return;
+
+      g.lastX = e.clientX;
+      g.lastY = e.clientY;
+
+      try{
+        g.page.flip('_eventMove', syntheticTouchEvent(e.pageX,e.pageY));
+      }catch(err){}
+
+      var dx = e.clientX-g.startX;
+
+      // Only 8 pixels in the natural turning direction is enough to commit.
+      if((g.wantRight && dx <= -COMMIT_DRAG_PX) ||
+         (!g.wantRight && dx >= COMMIT_DRAG_PX)){
+        g.committed = true;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function endQuadrantTurn(e, cancelled){
+      var g = quadrantGesture;
+      if(!g || (e.pointerId !== undefined && g.pointerId !== e.pointerId)) return;
+
+      quadrantGesture = null;
+
+      try{
+        if(!cancelled && g.committed){
+          // Bypass Turn.js's stock "must drag far enough" release test.
+          // The small intentional drag above is our commitment threshold.
+          g.page.flip('turnPage', g.corner);
+        }else{
+          // No deliberate drag: return the page smoothly.
+          g.page.flip('hideFoldedPage', true);
+        }
+      }catch(err){
+        try{ g.page.flip('_eventEnd'); }catch(err2){}
+      }
+
+      try{
+        if(e.pointerId !== undefined) quadrantOverlay.releasePointerCapture(e.pointerId);
+      }catch(err){}
+
+      if(e.preventDefault) e.preventDefault();
+      if(e.stopPropagation) e.stopPropagation();
+    }
+
+    if(quadrantOverlay){
+      quadrantOverlay.addEventListener('pointerdown', function(e){
+        beginQuadrantTurn(e);
+      }, {passive:false});
+
+      quadrantOverlay.addEventListener('pointermove', function(e){
+        moveQuadrantTurn(e);
+      }, {passive:false});
+
+      quadrantOverlay.addEventListener('pointerup', function(e){
+        endQuadrantTurn(e,false);
+      }, {passive:false});
+
+      quadrantOverlay.addEventListener('pointercancel', function(e){
+        endQuadrantTurn(e,true);
+      }, {passive:false});
+
+      // Turn.js 3 also listens for touch events. Stop those from starting a
+      // second competing gesture when our full-screen layer owns the touch.
+      quadrantOverlay.addEventListener('touchstart', function(e){
+        if(quadrantGesture){
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }, {capture:true,passive:false});
+    }
+
     window.addEventListener('pointerdown', function(e){
       lastPointer = {x:e.clientX,y:e.clientY,t:performance.now()};
       lastGestureSpeed = 0;
@@ -1962,7 +2143,7 @@
     // Tap the top 12% of the active page spread to reveal controls.
     screenEl.addEventListener('pointerdown', function(e){
       var r = screenEl.getBoundingClientRect();
-      if((e.clientY-r.top) < Math.max(44, r.height*.12)){
+      if((e.clientY-r.top) <= 48){
         syncToolbarRef();
         openToolbar();
       }
@@ -2014,4 +2195,4 @@
     boot();
   }
 })();
-                                  </script>
+  </script>
