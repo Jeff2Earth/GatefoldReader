@@ -1812,11 +1812,92 @@
       playFoldSound();
       saveAppSettings();
 
-      // Use the SAME controlled rebuild/restore path as orientation changes.
-      // It repaginates for the new fold geometry and restores the equivalent
-      // reading location instead of leaving the new book on its cover.
+      // Rebuild ONLY the page geometry. Do not re-run reading/fullscreen mode
+      // setup here, because Fold/Unfold should not change whether the app is
+      // fullscreen or windowed.
       if(currentSource){
-        applyReadingMode(foldSnapshot);
+        computeResponsiveSizes();
+
+        if(readingMode){
+          var vp = getViewportSize();
+
+          if(folded){
+            FOLDED_W = vp.w;
+            FOLDED_H = vp.h;
+          }else{
+            UNFOLDED_W = vp.w;
+            UNFOLDED_H = vp.h;
+          }
+        }
+
+        if(measureEl){
+          try{ measureEl.remove(); }catch(e){}
+          measureEl = null;
+        }
+
+        buildBookFromParagraphs(
+          currentSource.paragraphs,
+          currentSource.title,
+          currentSource.author,
+          currentSource.chapterLabelOverride
+        );
+
+        var foldRestored = false;
+
+        function restoreAfterFoldSwitch(){
+          if(foldRestored) return;
+
+          try{
+            if(!flipEl || !flipEl.length) return;
+
+            var afterPages = flipEl.turn('pages') || 1;
+            var target;
+
+            if(afterPages === foldSnapshot.pages){
+              target = foldSnapshot.page;
+            }else{
+              target = 1 + Math.round(
+                Math.max(0,Math.min(1,foldSnapshot.ratio || 0)) *
+                Math.max(0,afterPages - 1)
+              );
+            }
+
+            target = Math.max(1,Math.min(afterPages,target));
+
+            if(foldSnapshot.page > 1 && target <= 1 && afterPages > 2){
+              target = 2;
+            }
+
+            flipEl.turn('page', target);
+            try{ flipEl.turn('resize'); }catch(e){}
+
+            updateChrome();
+            syncBookmarkButton();
+
+            foldRestored = true;
+            suppressProgressSave = false;
+            saveCurrentProgress();
+
+            // Re-assert the current reading/fullscreen CSS state without
+            // invoking any browser fullscreen enter/exit behavior.
+            document.body.classList.toggle('gf-reading-full', readingMode);
+
+          }catch(e){}
+        }
+
+        requestAnimationFrame(function(){
+          requestAnimationFrame(restoreAfterFoldSwitch);
+        });
+        setTimeout(restoreAfterFoldSwitch, 160);
+        setTimeout(function(){
+          if(!foldRestored){
+            restoreAfterFoldSwitch();
+          }
+          if(!foldRestored){
+            suppressProgressSave = false;
+          }
+        }, 420);
+
       }else{
         computeResponsiveSizes();
         applyDisplay();
@@ -1941,7 +2022,10 @@
     // Restore preferences before the first fullscreen layout.
     var savedAppSettings = loadAppSettings();
     if(typeof savedAppSettings.folded === 'boolean') folded = savedAppSettings.folded;
-    if(typeof savedAppSettings.readingMode === 'boolean') readingMode = savedAppSettings.readingMode;
+    // Always START Gatefold in fullscreen reading mode.
+    // The user can still leave fullscreen manually during the session, but a
+    // fresh app launch returns to fullscreen instead of restoring windowed mode.
+    readingMode = true;
     if(typeof savedAppSettings.soundOn === 'boolean') soundOn = savedAppSettings.soundOn;
 
     if(savedAppSettings.fontScale){
@@ -2452,4 +2536,4 @@
     boot();
   }
 })();
-</script>
+      </script>
