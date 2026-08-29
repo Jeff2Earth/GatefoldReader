@@ -674,24 +674,34 @@
       // Canvas paginator incorrectly used pageH here, which reserved far too
       // much vertical space on a wide Fold display and left a large blank band
       // at the bottom of every page.
-      var usableW = pageW * (1 - 0.07 - 0.07);
+      var usableW, usableH;
+      try{
+        var calEl = document.createElement('div');
+        calEl.className = 'sheet sheet--text';
+        calEl.style.position = 'fixed';
+        calEl.style.left = '-9999px';
+        calEl.style.top = '0';
+        calEl.style.width = pageW + 'px';
+        calEl.style.height = pageH + 'px';
+        calEl.style.visibility = 'hidden';
+        calEl.style.pointerEvents = 'none';
+        calEl.innerHTML =
+          '<div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
+          '<div class="para"></div>' +
+          '<div class="folio">1</div>';
+        document.querySelector('.gf-root').appendChild(calEl);
+        var calPara = calEl.querySelector('.para');
+        var calRect = calPara.getBoundingClientRect();
+        usableW = calRect.width;
+        usableH = calRect.height;
+        calEl.remove();
+      }catch(err){ usableW = 0; usableH = 0; }
 
-      var padTopPx = pageW * 0.09;
-      var padBottomPx = pageW * 0.07;
-
-      var runningHeadPx = 10 * 2;
-      var folioPx = 11;
-      var headMargin = pageW * 0.07;
-      var folioMargin = pageW * 0.04;
-
-      var usableH =
-        pageH -
-        padTopPx -
-        padBottomPx -
-        runningHeadPx -
-        folioPx -
-        headMargin -
-        folioMargin;
+      if(!usableW || !usableH){
+        // Fallback only if real measurement failed for some reason.
+        usableW = pageW * (1 - 0.07 - 0.07);
+        usableH = pageH - pageW*0.09 - pageW*0.07 - 20 - 11 - pageW*0.07 - pageW*0.04;
+      }
 
       // Read the REAL browser metrics once. This keeps Canvas fast while making
       // its vertical accounting match the CSS that actually renders the page.
@@ -704,19 +714,25 @@
       try{
         var root = document.querySelector('.gf-root');
         if(root){
+          var probeWrap = document.createElement('div');
+          probeWrap.className = 'sheet sheet--text';
+          probeWrap.style.position = 'fixed';
+          probeWrap.style.left = '-9999px';
+          probeWrap.style.top = '0';
+          probeWrap.style.width = pageW + 'px';
+          probeWrap.style.height = pageH + 'px';
+          probeWrap.style.visibility = 'hidden';
+          probeWrap.style.pointerEvents = 'none';
+
           var probe = document.createElement('div');
           probe.className = 'para';
-          probe.style.position = 'fixed';
-          probe.style.left = '-9999px';
-          probe.style.top = '0';
           probe.style.width = Math.max(100, usableW) + 'px';
-          probe.style.visibility = 'hidden';
-          probe.style.pointerEvents = 'none';
 
           var pp = document.createElement('p');
           pp.textContent = 'Measure';
           probe.appendChild(pp);
-          root.appendChild(probe);
+          probeWrap.appendChild(probe);
+          root.appendChild(probeWrap);
 
           var cs = getComputedStyle(probe);
           var pcs = getComputedStyle(pp);
@@ -744,13 +760,13 @@
             }
           }
 
-          probe.remove();
+          probeWrap.remove();
         }
       }catch(err){}
 
       // Keep only a modest hard guard. The real font/line/margin values above
       // now do most of the work, so we no longer need the oversized V4 reserve.
-      usableH -= linePx * 1.85;
+      usableH -= linePx * 0.3;
 
       // Small safety reserve for sub-pixel differences and justification.
       usableW *= 0.985;
