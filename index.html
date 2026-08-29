@@ -932,33 +932,45 @@
             continue;
           }
 
-          var fitLines = linesThatFit(room - paraGapPx, lines.length);
+          // Find the exact split point with a real DOM-verified binary search,
+          // rather than trusting the (deliberately conservative) canvas
+          // estimate. The estimate is fine for deciding *that* a split is
+          // needed, but using it to decide *where* to cut was leaving the
+          // safety margin's worth of blank space behind on every split.
+          var existingHtmlForSplit = existingPageHtml();
+          var isFirstFragForSplit = firstPage && !pageParts.length;
 
-          if(fitLines <= 0){
+          var lo = 0, hi = remaining.length;
+          if(hi > 0 && realFitCheck(existingHtmlForSplit, wrapParagraphHtml(remaining.join(' '), isFirstFragForSplit))){
+            lo = hi;
+          } else {
+            while(lo < hi){
+              var mid = Math.ceil((lo + hi) / 2);
+              var candidate = wrapParagraphHtml(remaining.slice(0, mid).join(' '), isFirstFragForSplit);
+              if(realFitCheck(existingHtmlForSplit, candidate)){ lo = mid; } else { hi = mid - 1; }
+            }
+          }
+
+          var takeWords = lo;
+
+          if(takeWords <= 0){
             if(pageParts.length){
               flushPage();
               continue;
             }
-
-            // Empty page but one line technically doesn't fit due to an extreme
-            // viewport/font combination. Force one line so pagination progresses.
-            fitLines = 1;
+            // Empty page but not even one word fits due to an extreme
+            // viewport/font combination. Force one word so pagination progresses.
+            takeWords = 1;
           }
 
-
-          // Determine the word count represented by the lines that fit.
-          var takeWords = 0;
-          for(var li=0; li<fitLines && li<lines.length; li++){
-            takeWords += lines[li].length;
-          }
-
-          takeWords = Math.max(1, Math.min(takeWords, remaining.length));
 
           var piece = remaining.slice(0, takeWords).join(' ');
           pageParts.push(piece);
 
-          // This piece consumes all remaining practical space on the page.
-          usedH += fitLines * linePx + paraGapPx;
+          // This piece was verified against the real page; treat the page as
+          // spent for the fast estimate's purposes so any further paragraph
+          // on this page correctly falls through to a real check too.
+          usedH = usableH;
           remaining = remaining.slice(takeWords);
 
           if(remaining.length){
