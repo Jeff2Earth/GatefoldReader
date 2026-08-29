@@ -667,19 +667,31 @@
       var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
       var pageH = folded ? FOLDED_H : UNFOLDED_H;
 
-      // Match .sheet--text padding: 9% top, 7% left/right, 7% bottom.
+      // Match .sheet--text padding.
+      //
+      // IMPORTANT: CSS percentage padding/margins are resolved from the
+      // containing block WIDTH, even for top/bottom values. The previous
+      // Canvas paginator incorrectly used pageH here, which reserved far too
+      // much vertical space on a wide Fold display and left a large blank band
+      // at the bottom of every page.
       var usableW = pageW * (1 - 0.07 - 0.07);
-      var usableH = pageH * (1 - 0.09 - 0.07);
 
-      // Reserve vertical space for the running head + folio + their margins.
-      // These values mirror the current CSS closely enough for deterministic,
-      // fast pagination while still leaving a safety margin.
+      var padTopPx = pageW * 0.09;
+      var padBottomPx = pageW * 0.07;
+
       var runningHeadPx = 10;
       var folioPx = 11;
-      var headMargin = pageH * 0.07;
-      var folioMargin = pageH * 0.04;
+      var headMargin = pageW * 0.07;
+      var folioMargin = pageW * 0.04;
 
-      usableH -= (runningHeadPx + folioPx + headMargin + folioMargin);
+      var usableH =
+        pageH -
+        padTopPx -
+        padBottomPx -
+        runningHeadPx -
+        folioPx -
+        headMargin -
+        folioMargin;
 
       // Current reader font. applyFontScale() uses 13px * fontScale.
       var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
@@ -691,8 +703,8 @@
 
       // Small safety reserve prevents borderline clipping from sub-pixel/font
       // differences between Canvas metrics and browser text rendering.
-      usableW *= 0.97;
-      usableH *= 0.96;
+      usableW *= 0.985;
+      usableH *= 0.992;
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2333,6 +2345,11 @@
     var readingMode = true;
     var fontScale = 1;
 
+    // Font changes can rebuild hundreds/thousands of pages. Do not allow rapid
+    // A+/A- taps to launch overlapping rebuild/restore cycles.
+    var fontChangeTimer = null;
+    var fontRebuildGeneration = 0;
+
     // Restore preferences before the first fullscreen layout.
     var savedAppSettings = loadAppSettings();
     if(typeof savedAppSettings.folded === 'boolean') folded = savedAppSettings.folded;
@@ -2658,6 +2675,7 @@
     });
 
     function applyFontScale(){
+      var thisFontGeneration = ++fontRebuildGeneration;
       // Save the CURRENT reading position before repagination.
       // Font changes alter page count, so use both raw page and proportional
       // position to get back to essentially the same text afterward.
@@ -2708,6 +2726,9 @@
         // default is page 1. Restore the user's reading position AFTER the
         // fresh pagination exists.
         var restoreAfterFontChange = function(){
+          // Ignore delayed callbacks left over from an older font rebuild.
+          if(thisFontGeneration !== fontRebuildGeneration) return;
+
           try{
             if(!flipEl || !flipEl.length) return;
 
@@ -2738,20 +2759,55 @@
       }
     }
 
+    function queueFontChange(delta){
+      // Update the requested size on every tap, but wait briefly before doing
+      // the expensive repagination. Five quick taps therefore become ONE book
+      // rebuild instead of five competing Turn.js rebuilds.
+      fontScale = Math.max(
+        .78,
+        Math.min(1.45, +(fontScale + delta).toFixed(2))
+      );
+
+      // Apply the visible CSS font rule immediately. The actual book pages are
+      // rebuilt only after tapping stops.
+      document.documentElement.style.setProperty(
+        '--gf-user-font-scale',
+        fontScale
+      );
+
+      var style = document.getElementById('gf-font-scale-style');
+      if(!style){
+        style = document.createElement('style');
+        style.id = 'gf-font-scale-style';
+        document.head.appendChild(style);
+      }
+
+      var userFontPx = +(13 * fontScale).toFixed(2);
+      style.textContent =
+        '.gf-root .para{font-size:'+userFontPx+'px!important;}';
+
+      saveAppSettings();
+
+      if(fontChangeTimer){
+        clearTimeout(fontChangeTimer);
+      }
+
+      fontChangeTimer = setTimeout(function(){
+        fontChangeTimer = null;
+        applyFontScale();
+      }, 220);
+    }
+
     fontUpBtn.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
-      fontScale = Math.min(1.45, +(fontScale+.08).toFixed(2));
-      applyFontScale();
-      saveAppSettings();
+      queueFontChange(.08);
     });
 
     fontDownBtn.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
-      fontScale = Math.max(.78, +(fontScale-.08).toFixed(2));
-      applyFontScale();
-      saveAppSettings();
+      queueFontChange(-.08);
     });
 
     themeBtn.addEventListener('click', function(){
@@ -2850,4 +2906,4 @@
     boot();
   }
 })();
-          </script>
+        </script>
