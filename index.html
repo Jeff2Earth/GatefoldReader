@@ -911,7 +911,12 @@
           var wholeCandidateHtml = wrapParagraphHtml(remaining.join(' '), firstPage && !pageParts.length);
           if(realFitCheck(existingPageHtml(), wholeCandidateHtml)){
             pageParts.push(remaining.join(' '));
-            usedH += paragraphHeight;
+            // The estimate was just proven wrong for this paragraph. Updating
+            // usedH with that same estimate would carry its error forward and
+            // corrupt every later fast-path decision on this page. Mark the
+            // page as spent instead, so subsequent paragraphs fall through to
+            // a real check too rather than trusting a now-unreliable number.
+            usedH = usableH;
             remaining = [];
             continue;
           }
@@ -3049,4 +3054,4 @@
     boot();
   }
 })();
-</script>
+                                </script>
