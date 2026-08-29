@@ -766,10 +766,10 @@
 
       // Keep only a modest hard guard. The real font/line/margin values above
       // now do most of the work, so we no longer need the oversized V4 reserve.
-      usableH -= linePx * 0.3;
+      usableH -= linePx * 0.65;
 
       // Small safety reserve for sub-pixel differences and justification.
-      usableW *= 0.985;
+      usableW *= 0.975;
       usableH *= 0.997;
 
       var canvas = document.createElement('canvas');
