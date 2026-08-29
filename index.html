@@ -698,14 +698,13 @@
       var fontPx = 13 * fs;
       var linePx = fontPx * 1.6;
 
-      // Leave one rendered line of hard clearance above the folio. Canvas text
-      // metrics and browser layout can differ slightly because of justification,
-      // glyph metrics and sub-pixel rounding. This prevents a final continuation
-      // line from slipping underneath the page number.
-      usableH -= linePx * 1.05;
-
-      // Verse paragraph spacing from .para p { margin-bottom:.85em; }
+      // Browser-rendered justified text can consume more vertical room than
+      // Canvas predicts, especially at large fonts. Protect the folio with two
+      // full rendered lines plus one normal paragraph gap so a borderline verse
+      // continuation moves to the next page instead of painting below the page
+      // number.
       var paraGapPx = fontPx * 0.85;
+      usableH -= (linePx * 2.0) + paraGapPx;
 
       // Small safety reserve prevents borderline clipping from sub-pixel/font
       // differences between Canvas metrics and browser text rendering.
@@ -2912,4 +2911,4 @@
     boot();
   }
 })();
-          </script>
+</script>
