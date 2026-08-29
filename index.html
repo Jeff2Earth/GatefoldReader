@@ -97,7 +97,7 @@
 
     <div id="gf-screen" style="position:relative;">
       <div id="flipbook"></div>
-      <div id="gf-swipe-overlay" style="position:absolute;top:0;left:-14px;right:-14px;bottom:-14px;z-index:60;touch-action:none;cursor:grab;"></div>
+      <div id="gf-swipe-overlay" style="position:absolute;top:0;left:-20px;right:-20px;bottom:-20px;z-index:9990;touch-action:none;cursor:grab;"></div>
     </div>
   </div>
 
@@ -166,6 +166,7 @@
     touch-action:none!important;
     background:transparent!important;
     cursor:grab;
+    z-index:9990!important;
     user-select:none!important;
     -webkit-user-select:none!important;
     -webkit-touch-callout:none!important;
@@ -617,23 +618,47 @@
     }
 
     function paginateParagraphsFast(paragraphs){
-      // Estimate capacity from the current physical page area. Keep this
-      // deliberately conservative so text never runs off the bottom.
+      // Fast path for very large books (such as the Bible).
+      //
+      // IMPORTANT: capacity must shrink as font size grows in BOTH dimensions:
+      // larger type gives fewer words per line AND fewer lines per page.
+      // Therefore usable word capacity scales approximately as 1/fontScale².
       var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
       var pageH = folded ? FOLDED_H : UNFOLDED_H;
       var areaScale = (pageW * pageH) / (250 * 430);
-      var TARGET_WORDS = Math.max(82, Math.min(210, Math.round(108 * areaScale)));
-      var MAX_WORDS = Math.max(TARGET_WORDS + 14, Math.min(235, Math.round(124 * areaScale)));
+
+      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
+      var fontAreaPenalty = fs * fs;
+
+      // Start from the previous physical-page estimate, then apply the
+      // font-area penalty and a safety factor so final lines never clip.
+      var baseTarget = 108 * areaScale;
+      var baseMax = 124 * areaScale;
+
+      var TARGET_UNITS = Math.max(
+        42,
+        Math.min(205, Math.round((baseTarget / fontAreaPenalty) * 0.88))
+      );
+      var MAX_UNITS = Math.max(
+        TARGET_UNITS + 8,
+        Math.min(220, Math.round((baseMax / fontAreaPenalty) * 0.91))
+      );
+
+      // Verse-heavy books pay extra vertical cost because every paragraph has
+      // a bottom margin. Treat each paragraph as several additional "words"
+      // so pages with many short verses are not overfilled.
+      var PARA_PENALTY = Math.max(2, Math.round(4.2 * fs));
+
       var pages = [];
       var pageHtml = '';
-      var pageWords = 0;
+      var pageUnits = 0;
       var firstPage = true;
 
       function flush(){
         if(pageHtml){
           pages.push(pageHtml);
           pageHtml = '';
-          pageWords = 0;
+          pageUnits = 0;
           firstPage = false;
         }
       }
@@ -641,35 +666,57 @@
       for(var i=0;i<paragraphs.length;i++){
         var raw = String(paragraphs[i] || '').trim();
         if(!raw) continue;
+
         var words = raw.split(/\s+/).filter(Boolean);
+        var fullUnits = words.length + PARA_PENALTY;
 
-        // Split only genuinely long source paragraphs.
-        if(words.length > MAX_WORDS){
+        // Split genuinely long source paragraphs according to the CURRENT
+        // font-derived page capacity.
+        if(fullUnits > MAX_UNITS){
           var offset = 0;
+
           while(offset < words.length){
-            var room = Math.max(40, TARGET_WORDS - pageWords);
-            var take = Math.min(room, words.length - offset);
+            var room = Math.max(12, TARGET_UNITS - pageUnits - PARA_PENALTY);
+
+            if(pageUnits > 0 && room < 12){
+              flush();
+              room = Math.max(12, TARGET_UNITS - PARA_PENALTY);
+            }
+
+            var take = Math.max(
+              1,
+              Math.min(words.length - offset, Math.floor(room))
+            );
+
             var chunk = words.slice(offset, offset + take).join(' ');
+            var chunkUnits = take + PARA_PENALTY;
 
-            if(pageWords && pageWords + take > MAX_WORDS) flush();
+            if(pageUnits > 0 && pageUnits + chunkUnits > MAX_UNITS){
+              flush();
+            }
 
-            pageHtml += wrapParagraphHtml(chunk, firstPage && pageWords===0);
-            pageWords += take;
+            pageHtml += wrapParagraphHtml(
+              chunk,
+              firstPage && pageUnits===0 && offset===0
+            );
+            pageUnits += chunkUnits;
             offset += take;
 
-            if(pageWords >= TARGET_WORDS) flush();
+            if(pageUnits >= TARGET_UNITS){
+              flush();
+            }
           }
           continue;
         }
 
-        if(pageWords && pageWords + words.length > MAX_WORDS){
+        if(pageUnits > 0 && pageUnits + fullUnits > MAX_UNITS){
           flush();
         }
 
-        pageHtml += wrapParagraphHtml(raw, firstPage && pageWords===0);
-        pageWords += words.length;
+        pageHtml += wrapParagraphHtml(raw, firstPage && pageUnits===0);
+        pageUnits += fullUnits;
 
-        if(pageWords >= TARGET_WORDS){
+        if(pageUnits >= TARGET_UNITS){
           flush();
         }
       }
