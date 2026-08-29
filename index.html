@@ -1759,29 +1759,6 @@
       e.stopPropagation();
     }
 
-    function commitTurnJsPage(g){
-      if(!g || !g.page || !g.page.length) return false;
-
-      try{
-        var fd = g.page.data().f;
-        if(!fd || !fd.opts || !fd.opts.turn) return false;
-
-        var turn = fd.opts.turn;
-        var td = turn.data();
-
-        // This is the critical Turn.js 3 step normally performed by its own
-        // _released() handler. Without tpage, turnPage() can animate the curl
-        // beautifully and then restore the SAME page when the animation ends.
-        td.tpage = fd.opts.next;
-        turn.turn('update');
-
-        g.page.flip('turnPage', g.corner);
-        return true;
-      }catch(err){
-        return false;
-      }
-    }
-
     function endQuadrantTurn(e, cancelled){
       var g = quadrantGesture;
       if(!g || (e.pointerId !== undefined && g.pointerId !== e.pointerId)) return;
@@ -1789,52 +1766,46 @@
       quadrantGesture = null;
 
       try{
-        // A stationary press/hold never started Turn.js, so there is nothing
-        // to retract and no visual "page goes back" behavior.
         if(!g.activated){
+          // Pure touch/hold with no directional movement never started Turn.js.
           g.finished = true;
         }else{
-          var totalDx = g.lastX-g.startX;
           var totalDy = g.lastY-g.startY;
-
-          // Once activation happened, Gatefold has already accepted the tiny
-          // directional stroke. Android pointercancel/lost capture cannot undo it.
           g.finished = true;
 
           if(g.autoPullRaf){
-            try{ cancelAnimationFrame(g.autoPullRaf); }catch(e){}
+            try{ cancelAnimationFrame(g.autoPullRaf); }catch(err){}
           }
 
-          var finishX = g.virtualStartX +
-            (g.wantRight ? -1 : 1) * (g.pageW * 0.90);
-          var finishY = g.virtualStartY + totalDy * DRAG_GAIN_Y;
+          // Force the logical drag point JUST BEYOND the opposite edge before
+          // releasing. Turn.js 3 treats an out-of-bounds release as a committed
+          // page turn regardless of how long the user paused while holding it.
+          //
+          // Right page: start near its right edge and finish beyond its left.
+          // Left page:  start near its left edge and finish beyond its right.
+          var nativeCommitX = g.virtualStartX +
+            (g.wantRight ? -1 : 1) * (g.pageW * 1.12);
+
+          var nativeCommitY = g.virtualStartY + totalDy * DRAG_GAIN_Y;
 
           try{
-            g.page.flip('_eventMove', syntheticTouchEvent(finishX,finishY));
-          }catch(e){}
+            g.page.flip(
+              '_eventMove',
+              syntheticTouchEvent(nativeCommitX, nativeCommitY)
+            );
+          }catch(err){}
 
-          // Commit the target page in Turn.js BEFORE asking it to finish
-          // the curl. This is what its native release handler does internally.
-          var beforeBookPage = 0;
-          try{ beforeBookPage = flipEl.turn('page') || 0; }catch(e){}
-
-          if(!commitTurnJsPage(g)){
+          // Let Turn.js perform its OWN native release bookkeeping and its
+          // original smooth curl/snap animation. This avoids manually invoking
+          // turnPage() and bypassing internal state.
+          try{
+            g.page.flip('_eventEnd');
+          }catch(err){
+            // Public API fallback only if the native private release fails.
             try{
               if(g.wantRight) flipEl.turn('next');
               else flipEl.turn('previous');
-            }catch(e2){}
-          }else{
-            // Belt-and-suspenders check: after the normal Turn.js finish
-            // animation, verify that its logical page actually changed.
-            setTimeout(function(){
-              try{
-                var nowPage = flipEl.turn('page') || 0;
-                if(beforeBookPage && nowPage === beforeBookPage){
-                  if(g.wantRight) flipEl.turn('next');
-                  else flipEl.turn('previous');
-                }
-              }catch(e){}
-            }, 900);
+            }catch(err2){}
           }
         }
       }catch(err){
@@ -1847,7 +1818,9 @@
       }
 
       try{
-        if(e.pointerId !== undefined) quadrantOverlay.releasePointerCapture(e.pointerId);
+        if(e.pointerId !== undefined){
+          quadrantOverlay.releasePointerCapture(e.pointerId);
+        }
       }catch(err){}
 
       if(e.preventDefault) e.preventDefault();
