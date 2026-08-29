@@ -2306,14 +2306,12 @@
 
         if(readingMode){
           var vp = getViewportSize();
-          var READING_CHROME_W2 = 130;
-          var chromeAdjustedW2 = Math.max(280, vp.w - READING_CHROME_W2);
 
           if(folded){
-            FOLDED_W = chromeAdjustedW2;
+            FOLDED_W = vp.w;
             FOLDED_H = vp.h;
           }else{
-            UNFOLDED_W = chromeAdjustedW2;
+            UNFOLDED_W = vp.w;
             UNFOLDED_H = vp.h;
           }
         }
@@ -2651,21 +2649,17 @@
       if(readingMode){
         var vp = getViewportSize();
 
-        // turn.js reserves a fixed amount of width internally (very likely
-        // for its own shadow/corner-curl rendering, tied to the elevation
-        // setting) that isn't part of the viewport math above. Confirmed
-        // against two real-device measurements: identical ~130px overhead
-        // whether folded (no gutter at all) or unfolded (gutter present),
-        // which rules out this being gutter-related and confirms it's a
-        // fixed internal allowance independent of display mode.
-        var READING_CHROME_W = 130;
-        var chromeAdjustedW = Math.max(280, vp.w - READING_CHROME_W);
-
+        // Previously subtracted a fixed 130px here to compensate for a
+        // width mismatch — but that mismatch was very likely a side effect
+        // of #flipbook being forced to fill the full screen via inset:0
+        // (now removed at its source). Use the real viewport directly and
+        // let the actual rendered size reveal whether any correction is
+        // still needed.
         if(folded){
-          FOLDED_W = chromeAdjustedW;
+          FOLDED_W = vp.w;
           FOLDED_H = vp.h;
         }else{
-          UNFOLDED_W = chromeAdjustedW;
+          UNFOLDED_W = vp.w;
           UNFOLDED_H = vp.h;
         }
       }
@@ -3166,4 +3160,4 @@
     boot();
   }
 })();
-        </script>
+</script>
