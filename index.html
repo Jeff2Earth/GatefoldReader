@@ -616,24 +616,83 @@
       return pages.length ? pages : [''];
     }
 
-    function paginateParagraphsFast(paragraphs){
-      // Estimate capacity from the current physical page area. Keep this
-      // deliberately conservative so text never runs off the bottom.
-      var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
-      var pageH = folded ? FOLDED_H : UNFOLDED_H;
-      var areaScale = (pageW * pageH) / (250 * 430);
-      var TARGET_WORDS = Math.max(82, Math.min(210, Math.round(108 * areaScale)));
-      var MAX_WORDS = Math.max(TARGET_WORDS + 14, Math.min(235, Math.round(124 * areaScale)));
+    function calibrateFastPageCapacity(paragraphs, chapterLabel){
+      // Measure ONE representative paragraph using the reader's actual page
+      // dimensions, padding, running head, folio, current font size and line
+      // height. This keeps the large-book path fast while making A+/A- affect
+      // pagination instead of merely enlarging text inside a fixed word count.
+      var sampleWords = [];
+      var sampleLimit = 420;
+
+      for(var i=0;i<paragraphs.length && sampleWords.length<sampleLimit;i++){
+        var ws = String(paragraphs[i] || '').trim().split(/\s+/).filter(Boolean);
+        for(var j=0;j<ws.length && sampleWords.length<sampleLimit;j++){
+          sampleWords.push(ws[j]);
+        }
+      }
+
+      if(!sampleWords.length){
+        return { target:90, max:105, paraCost:5 };
+      }
+
+      // Repeat the available source words if the opening material is unusually
+      // short so the binary search has enough text to fill a page.
+      var seed = sampleWords.slice();
+      while(sampleWords.length < sampleLimit && seed.length){
+        sampleWords = sampleWords.concat(seed);
+      }
+      sampleWords = sampleWords.slice(0, sampleLimit);
+
+      var lo = 1;
+      var hi = sampleWords.length;
+
+      while(lo < hi){
+        var mid = Math.ceil((lo + hi) / 2);
+        var h = wrapParagraphHtml(sampleWords.slice(0, mid).join(' '), false);
+
+        if(fitsInPage(chapterLabel || '', h)){
+          lo = mid;
+        }else{
+          hi = mid - 1;
+        }
+      }
+
+      var measuredMax = Math.max(24, lo);
+
+      // Bible/EPUB text often has many short verse paragraphs, each with its
+      // own bottom margin. Leave a healthy reserve rather than filling the
+      // measured single-paragraph page to 100%.
+      var target = Math.max(28, Math.floor(measuredMax * 0.76));
+      var max = Math.max(target + 8, Math.floor(measuredMax * 0.86));
+
+      // Paragraph spacing consumes roughly part of a text line. Charging each
+      // paragraph several "word units" makes verse-heavy pages break earlier.
+      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
+      var paraCost = Math.max(4, Math.round(5 * fs));
+
+      return {
+        target: target,
+        max: max,
+        paraCost: paraCost
+      };
+    }
+
+    function paginateParagraphsFast(paragraphs, chapterLabel){
+      var cap = calibrateFastPageCapacity(paragraphs, chapterLabel);
+      var TARGET_UNITS = cap.target;
+      var MAX_UNITS = cap.max;
+      var PARA_COST = cap.paraCost;
+
       var pages = [];
       var pageHtml = '';
-      var pageWords = 0;
+      var pageUnits = 0;
       var firstPage = true;
 
       function flush(){
         if(pageHtml){
           pages.push(pageHtml);
           pageHtml = '';
-          pageWords = 0;
+          pageUnits = 0;
           firstPage = false;
         }
       }
@@ -641,35 +700,63 @@
       for(var i=0;i<paragraphs.length;i++){
         var raw = String(paragraphs[i] || '').trim();
         if(!raw) continue;
+
         var words = raw.split(/\s+/).filter(Boolean);
+        var wholeUnits = words.length + PARA_COST;
 
-        // Split only genuinely long source paragraphs.
-        if(words.length > MAX_WORDS){
+        // A genuinely long source paragraph may need to be split. Use the same
+        // measured capacity rather than a hard-coded word count.
+        if(wholeUnits > MAX_UNITS){
           var offset = 0;
+
           while(offset < words.length){
-            var room = Math.max(40, TARGET_WORDS - pageWords);
-            var take = Math.min(room, words.length - offset);
+            if(pageUnits >= TARGET_UNITS){
+              flush();
+            }
+
+            var room = Math.max(8, TARGET_UNITS - pageUnits - PARA_COST);
+
+            if(pageUnits > 0 && room < 8){
+              flush();
+              room = Math.max(8, TARGET_UNITS - PARA_COST);
+            }
+
+            var take = Math.max(
+              1,
+              Math.min(words.length - offset, Math.floor(room))
+            );
+
             var chunk = words.slice(offset, offset + take).join(' ');
+            var chunkUnits = take + PARA_COST;
 
-            if(pageWords && pageWords + take > MAX_WORDS) flush();
+            if(pageUnits > 0 && pageUnits + chunkUnits > MAX_UNITS){
+              flush();
+            }
 
-            pageHtml += wrapParagraphHtml(chunk, firstPage && pageWords===0);
-            pageWords += take;
+            pageHtml += wrapParagraphHtml(
+              chunk,
+              firstPage && pageUnits===0 && offset===0
+            );
+
+            pageUnits += chunkUnits;
             offset += take;
 
-            if(pageWords >= TARGET_WORDS) flush();
+            if(pageUnits >= TARGET_UNITS){
+              flush();
+            }
           }
+
           continue;
         }
 
-        if(pageWords && pageWords + words.length > MAX_WORDS){
+        if(pageUnits > 0 && pageUnits + wholeUnits > MAX_UNITS){
           flush();
         }
 
-        pageHtml += wrapParagraphHtml(raw, firstPage && pageWords===0);
-        pageWords += words.length;
+        pageHtml += wrapParagraphHtml(raw, firstPage && pageUnits===0);
+        pageUnits += wholeUnits;
 
-        if(pageWords >= TARGET_WORDS){
+        if(pageUnits >= TARGET_UNITS){
           flush();
         }
       }
@@ -687,7 +774,7 @@
         if(totalWords > 12000) break;
       }
       return totalWords > 12000
-        ? paginateParagraphsFast(paragraphs)
+        ? paginateParagraphsFast(paragraphs, chapterLabel)
         : paginateParagraphsMeasured(paragraphs, chapterLabel);
     }
 
