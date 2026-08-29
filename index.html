@@ -678,90 +678,154 @@
     }
 
     function paginateParagraphsFast(paragraphs, chapterLabel){
-      var cap = calibrateFastPageCapacity(paragraphs, chapterLabel);
+      // Large-book paginator:
+      // 1. Use the calibrated capacity only to create a QUICK candidate page.
+      // 2. BEFORE accepting that page, validate its actual rendered height with
+      //    fitsInPage() at the CURRENT font size.
+      // 3. If it overflows, move complete verses/paragraphs to the next page.
+      // 4. If one verse itself is too tall, split that verse with maxWordsFit().
+      //
+      // This keeps Bible-sized books practical while making the final page
+      // boundary depend on real DOM layout rather than a word-count estimate.
+
+      var source = paragraphs.map(function(p){
+        return String(p || '').trim();
+      }).filter(Boolean);
+
+      var cap = calibrateFastPageCapacity(source, chapterLabel);
       var TARGET_UNITS = cap.target;
       var MAX_UNITS = cap.max;
       var PARA_COST = cap.paraCost;
 
       var pages = [];
-      var pageHtml = '';
-      var pageUnits = 0;
+      var index = 0;
+      var carry = null;
       var firstPage = true;
+      var guard = 0;
 
-      function flush(){
-        if(pageHtml){
-          pages.push(pageHtml);
-          pageHtml = '';
-          pageUnits = 0;
-          firstPage = false;
-        }
+      function paraUnits(text){
+        return String(text || '').split(/\s+/).filter(Boolean).length + PARA_COST;
       }
 
-      for(var i=0;i<paragraphs.length;i++){
-        var raw = String(paragraphs[i] || '').trim();
-        if(!raw) continue;
+      function makeHtml(items, isFirst){
+        var out = '';
+        for(var k=0;k<items.length;k++){
+          out += wrapParagraphHtml(items[k], isFirst && k===0);
+        }
+        return out;
+      }
 
-        var words = raw.split(/\s+/).filter(Boolean);
-        var wholeUnits = words.length + PARA_COST;
+      while((index < source.length || carry) && guard < 50000){
+        guard++;
 
-        // A genuinely long source paragraph may need to be split. Use the same
-        // measured capacity rather than a hard-coded word count.
-        if(wholeUnits > MAX_UNITS){
-          var offset = 0;
+        var items = [];
+        var units = 0;
 
-          while(offset < words.length){
-            if(pageUnits >= TARGET_UNITS){
-              flush();
-            }
+        // Start with any remainder from an oversized verse.
+        if(carry){
+          items.push(carry);
+          units += paraUnits(carry);
+          carry = null;
+        }
 
-            var room = Math.max(8, TARGET_UNITS - pageUnits - PARA_COST);
+        // QUICKLY assemble a candidate page using the capacity estimate.
+        while(index < source.length){
+          var raw = source[index];
+          var u = paraUnits(raw);
 
-            if(pageUnits > 0 && room < 8){
-              flush();
-              room = Math.max(8, TARGET_UNITS - PARA_COST);
-            }
-
-            var take = Math.max(
-              1,
-              Math.min(words.length - offset, Math.floor(room))
-            );
-
-            var chunk = words.slice(offset, offset + take).join(' ');
-            var chunkUnits = take + PARA_COST;
-
-            if(pageUnits > 0 && pageUnits + chunkUnits > MAX_UNITS){
-              flush();
-            }
-
-            pageHtml += wrapParagraphHtml(
-              chunk,
-              firstPage && pageUnits===0 && offset===0
-            );
-
-            pageUnits += chunkUnits;
-            offset += take;
-
-            if(pageUnits >= TARGET_UNITS){
-              flush();
-            }
+          if(items.length && units + u > MAX_UNITS){
+            break;
           }
 
-          continue;
+          items.push(raw);
+          units += u;
+          index++;
+
+          if(units >= TARGET_UNITS){
+            break;
+          }
         }
 
-        if(pageUnits > 0 && pageUnits + wholeUnits > MAX_UNITS){
-          flush();
+        if(!items.length && index < source.length){
+          items.push(source[index++]);
         }
 
-        pageHtml += wrapParagraphHtml(raw, firstPage && pageUnits===0);
-        pageUnits += wholeUnits;
+        var pageHtml = makeHtml(items, firstPage);
 
-        if(pageUnits >= TARGET_UNITS){
-          flush();
+        // TRUE validation against the actual page box/current font.
+        if(!fitsInPage(chapterLabel, pageHtml)){
+          // Move whole verses/paragraphs off the bottom until it fits.
+          while(items.length > 1 && !fitsInPage(chapterLabel, pageHtml)){
+            index--;
+            items.pop();
+            pageHtml = makeHtml(items, firstPage);
+          }
+
+          // If a single verse/paragraph itself is too tall, split it using the
+          // same real DOM measurement routine used by ordinary books.
+          if(items.length === 1 && !fitsInPage(chapterLabel, pageHtml)){
+            var rawOne = items[0];
+            var words = rawOne.split(/\s+/).filter(Boolean);
+
+            var fitCount = maxWordsFit(
+              chapterLabel,
+              '',
+              words,
+              firstPage
+            );
+
+            // Defensive fallback: always make forward progress.
+            if(fitCount <= 0){
+              fitCount = Math.max(1, Math.floor(words.length / 2));
+            }
+
+            var head = words.slice(0, fitCount).join(' ');
+            var tail = words.slice(fitCount).join(' ');
+
+            pageHtml = wrapParagraphHtml(head, firstPage);
+
+            if(tail){
+              carry = tail;
+            }
+          }
         }
+
+        // Final safety check. In the unlikely event a page still does not fit,
+        // trim the final paragraph word-by-word rather than allowing clipping.
+        if(!fitsInPage(chapterLabel, pageHtml)){
+          var finalWords = items.length
+            ? String(items[items.length-1] || '').split(/\s+/).filter(Boolean)
+            : [];
+
+          if(finalWords.length > 1){
+            var prefixItems = items.slice(0, -1);
+            var prefixHtml = makeHtml(prefixItems, firstPage);
+            var lastIsFirst = firstPage && prefixItems.length===0;
+
+            var n = maxWordsFit(
+              chapterLabel,
+              prefixHtml,
+              finalWords,
+              lastIsFirst
+            );
+
+            if(n > 0){
+              pageHtml =
+                prefixHtml +
+                wrapParagraphHtml(finalWords.slice(0,n).join(' '), lastIsFirst);
+
+              var rest = finalWords.slice(n).join(' ');
+              if(rest){
+                carry = rest;
+              }
+            }
+          }
+        }
+
+        pages.push(pageHtml);
+        firstPage = false;
       }
 
-      flush();
       return pages.length ? pages : [''];
     }
 
