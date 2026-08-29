@@ -694,6 +694,12 @@
         calEl.style.height = pageH + 'px';
         calEl.style.visibility = 'hidden';
         calEl.style.pointerEvents = 'none';
+        // #flipbook .tpage.odd/.even .sheet--text reduces one side's padding
+        // from 7% to 5% (12% total instead of 14%). That selector needs a
+        // real #flipbook ancestor to match, which this calibration element
+        // (appended to .gf-root) never has, so apply the same reduction
+        // directly to reflect what every real rendered page actually gets.
+        calEl.style.paddingRight = '5%';
         calEl.innerHTML =
           '<div class="running-head">'+escapeHtml(calLabel)+'</div>' +
           '<div class="para"></div>' +
@@ -732,6 +738,7 @@
           probeWrap.style.height = pageH + 'px';
           probeWrap.style.visibility = 'hidden';
           probeWrap.style.pointerEvents = 'none';
+          probeWrap.style.paddingRight = '5%';
 
           var probe = document.createElement('div');
           probe.className = 'para';
@@ -854,6 +861,7 @@
         testEl.style.height = pageH + 'px';
         testEl.style.visibility = 'hidden';
         testEl.style.pointerEvents = 'none';
+        testEl.style.paddingRight = '5%';
         testEl.innerHTML =
           '<div class="running-head">'+escapeHtml(calLabel)+'</div>' +
           '<div class="para">'+existingHtml+candidateHtml+'</div>' +
@@ -903,7 +911,7 @@
           var wholeCandidateHtml = wrapParagraphHtml(remaining.join(' '), firstPage && !pageParts.length);
           if(realFitCheck(existingPageHtml(), wholeCandidateHtml)){
             pageParts.push(remaining.join(' '));
-            usedH = usableH; // treat as full; exact value no longer drives decisions this page
+            usedH += paragraphHeight;
             remaining = [];
             continue;
           }
