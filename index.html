@@ -2658,6 +2658,46 @@
           UNFOLDED_W = vp.w;
           UNFOLDED_H = vp.h;
         }
+
+        // The viewport-based guess above assumes the whole viewport is
+        // usable page space, but turn.js's own internal chrome (the page
+        // gutter, etc.) eats into that in double-display mode. Rather than
+        // guess how much, render a real throwaway page at the assumed size
+        // and measure what actually results, then correct before the real
+        // (expensive) pagination pass uses a wrong number.
+        try{
+          var calFlipEl = document.getElementById('flipbook');
+          if(calFlipEl && window.jQuery){
+            var calNewEl = document.createElement('div');
+            calNewEl.id = 'flipbook';
+            calFlipEl.parentNode.replaceChild(calNewEl, calFlipEl);
+            calNewEl.innerHTML = '<div class="tpage"><div class="sheet sheet--text"></div></div>' +
+              (folded ? '' : '<div class="tpage"><div class="sheet sheet--text"></div></div>');
+            var $cal = jQuery('#flipbook');
+            $cal.turn({
+              width: folded ? FOLDED_W : UNFOLDED_W,
+              height: folded ? FOLDED_H : UNFOLDED_H,
+              display: folded ? 'single' : 'double'
+            });
+            var realTpage = document.querySelector('#flipbook .tpage');
+            if(realTpage){
+              var realW = realTpage.getBoundingClientRect().width;
+              var assumedW = folded ? FOLDED_W : (UNFOLDED_W / 2);
+              if(realW > 40 && Math.abs(realW - assumedW) > 8){
+                var wRatio = realW / assumedW;
+                if(folded){
+                  FOLDED_W = Math.max(200, Math.round(FOLDED_W * wRatio));
+                }else{
+                  UNFOLDED_W = Math.max(400, Math.round(UNFOLDED_W * wRatio));
+                }
+              }
+            }
+            var calOldEl = document.getElementById('flipbook');
+            var calResetEl = document.createElement('div');
+            calResetEl.id = 'flipbook';
+            calOldEl.parentNode.replaceChild(calResetEl, calOldEl);
+          }
+        }catch(e){}
       }
 
       if(currentSource){
