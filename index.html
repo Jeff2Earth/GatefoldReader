@@ -174,6 +174,12 @@
   #gf-prev-btn:disabled, #gf-next-btn:disabled { opacity:.3; cursor:default; }
   #gf-load-btn:hover { border-color:rgba(198,161,91,.7); color:var(--gilt); }
   .gf-root button:focus-visible { outline: 2px solid var(--gilt); outline-offset:2px; }
+
+/* Reflow measurement safety */
+.gf-root .sheet--text .para{
+  min-height:0;
+}
+
 </style>
 
 
@@ -531,6 +537,10 @@
       var pageH = folded ? FOLDED_H : UNFOLDED_H;
       measureEl.style.width = pageW + 'px';
       measureEl.style.height = pageH + 'px';
+      measureEl.style.minHeight = pageH + 'px';
+      measureEl.style.maxHeight = pageH + 'px';
+      measureEl.style.overflow = 'hidden';
+      measureEl.style.boxSizing = 'border-box';
       measureEl.style.visibility = 'hidden';
       measureEl.style.pointerEvents = 'none';
       document.querySelector('.gf-root').appendChild(measureEl);
@@ -551,9 +561,43 @@
 
     function fitsInPage(chapterLabel, paraHtml){
       var mEl = getMeasureEl();
-      mEl.innerHTML = '<div class="running-head">'+escapeHtml(chapterLabel)+'</div><div class="para">'+paraHtml+'</div><div class="folio">1</div>';
+
+      mEl.innerHTML =
+        '<div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
+        '<div class="para">'+paraHtml+'</div>' +
+        '<div class="folio">1</div>';
+
       var paraNode = mEl.querySelector('.para');
-      return paraNode.scrollHeight <= paraNode.clientHeight + 1;
+      var headNode = mEl.querySelector('.running-head');
+      var folioNode = mEl.querySelector('.folio');
+
+      if(!paraNode) return true;
+
+      var sheetStyle = getComputedStyle(mEl);
+      var headStyle = headNode ? getComputedStyle(headNode) : null;
+      var folioStyle = folioNode ? getComputedStyle(folioNode) : null;
+
+      var padTop = parseFloat(sheetStyle.paddingTop) || 0;
+      var padBottom = parseFloat(sheetStyle.paddingBottom) || 0;
+
+      var headHeight = headNode ? headNode.getBoundingClientRect().height : 0;
+      var folioHeight = folioNode ? folioNode.getBoundingClientRect().height : 0;
+
+      var headMarginBottom = headStyle ? (parseFloat(headStyle.marginBottom) || 0) : 0;
+      var folioMarginTop = folioStyle ? (parseFloat(folioStyle.marginTop) || 0) : 0;
+
+      var available =
+        mEl.clientHeight -
+        padTop -
+        padBottom -
+        headHeight -
+        headMarginBottom -
+        folioHeight -
+        folioMarginTop;
+
+      available = Math.max(0, available);
+
+      return paraNode.scrollHeight <= available + 1;
     }
 
     function maxWordsFit(chapterLabel, prefixHtml, words, isFirstFragment){
@@ -616,111 +660,90 @@
       return pages.length ? pages : [''];
     }
 
-    function paginateParagraphsFast(paragraphs){
-      // Fast paginator for very large books such as the Bible.
-      //
-      // The previous version estimated page capacity from screen area only.
-      // That meant A+ enlarged the rendered text without reducing how much
-      // text was assigned to the page, so the bottom lines could be clipped.
-      //
-      // Keep this fast path, but make its capacity depend on the CURRENT font
-      // size in both horizontal and vertical directions. Approximate capacity
-      // therefore falls with fontScale squared.
-
-      var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
-      var pageH = folded ? FOLDED_H : UNFOLDED_H;
-      var areaScale = (pageW * pageH) / (250 * 430);
-
-      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
-      var fontPenalty = fs * fs;
-
-      // Preserve roughly the same density at fontScale=1 while becoming
-      // increasingly conservative as the type grows.
-      var TARGET_UNITS = Math.max(
-        42,
-        Math.min(205, Math.round((108 * areaScale) / fontPenalty))
-      );
-
-      var MAX_UNITS = Math.max(
-        TARGET_UNITS + 10,
-        Math.min(220, Math.round((122 * areaScale) / fontPenalty))
-      );
-
-      // Every paragraph/verse consumes vertical margin in addition to its
-      // words. Counting that margin prevents verse-heavy Bible pages from
-      // overflowing even when the raw word count looks acceptable.
-      var PARA_COST = Math.max(3, Math.round(4 * fs));
-
+    function paginateParagraphsFast(paragraphs, chapterLabel){
       var pages = [];
       var pageHtml = '';
-      var pageUnits = 0;
       var firstPage = true;
 
       function flush(){
         if(pageHtml){
           pages.push(pageHtml);
           pageHtml = '';
-          pageUnits = 0;
           firstPage = false;
         }
+      }
+
+      function appendTextPiece(text){
+        if(!text) return;
+        pageHtml += wrapParagraphHtml(
+          text,
+          firstPage && pageHtml === ''
+        );
       }
 
       for(var i=0;i<paragraphs.length;i++){
         var raw = String(paragraphs[i] || '').trim();
         if(!raw) continue;
 
-        var words = raw.split(/\s+/).filter(Boolean);
-        var paraUnits = words.length + PARA_COST;
+        var wholeCandidate =
+          pageHtml +
+          wrapParagraphHtml(raw, firstPage && pageHtml === '');
 
-        // Split only paragraphs that genuinely cannot fit on one page.
-        if(paraUnits > MAX_UNITS){
-          var offset = 0;
-
-          while(offset < words.length){
-            var available = TARGET_UNITS - pageUnits - PARA_COST;
-
-            if(pageUnits > 0 && available < 12){
-              flush();
-              available = TARGET_UNITS - PARA_COST;
-            }
-
-            var take = Math.max(
-              1,
-              Math.min(words.length - offset, Math.floor(Math.max(12, available)))
-            );
-
-            var chunk = words.slice(offset, offset + take).join(' ');
-            var chunkUnits = take + PARA_COST;
-
-            if(pageUnits > 0 && pageUnits + chunkUnits > MAX_UNITS){
-              flush();
-            }
-
-            pageHtml += wrapParagraphHtml(
-              chunk,
-              firstPage && pageUnits===0 && offset===0
-            );
-
-            pageUnits += chunkUnits;
-            offset += take;
-
-            if(pageUnits >= TARGET_UNITS){
-              flush();
-            }
-          }
-
+        if(fitsInPage(chapterLabel, wholeCandidate)){
+          pageHtml = wholeCandidate;
           continue;
         }
 
-        if(pageUnits > 0 && pageUnits + paraUnits > MAX_UNITS){
-          flush();
-        }
+        var remainingWords = raw.split(/\s+/).filter(Boolean);
 
-        pageHtml += wrapParagraphHtml(raw, firstPage && pageUnits===0);
-        pageUnits += paraUnits;
+        while(remainingWords.length){
+          var isFirstPara = firstPage && pageHtml === '';
 
-        if(pageUnits >= TARGET_UNITS){
-          flush();
+          var fitCount = maxWordsFit(
+            chapterLabel,
+            pageHtml,
+            remainingWords,
+            isFirstPara
+          );
+
+          if(fitCount > 0){
+            appendTextPiece(
+              remainingWords.slice(0, fitCount).join(' ')
+            );
+
+            remainingWords = remainingWords.slice(fitCount);
+
+            if(remainingWords.length){
+              flush();
+            }
+
+            continue;
+          }
+
+          if(pageHtml){
+            flush();
+            continue;
+          }
+
+          fitCount = Math.max(
+            1,
+            maxWordsFit(
+              chapterLabel,
+              '',
+              remainingWords,
+              firstPage
+            )
+          );
+
+          appendTextPiece(
+            remainingWords.slice(0, fitCount).join(' ')
+          );
+
+          remainingWords = remainingWords.slice(fitCount);
+
+          if(remainingWords.length){
+            flush();
+          }
         }
       }
 
@@ -737,7 +760,7 @@
         if(totalWords > 12000) break;
       }
       return totalWords > 12000
-        ? paginateParagraphsFast(paragraphs)
+        ? paginateParagraphsFast(paragraphs, chapterLabel)
         : paginateParagraphsMeasured(paragraphs, chapterLabel);
     }
 
@@ -2742,4 +2765,4 @@
     boot();
   }
 })();
-                            </script>
+        </script>
