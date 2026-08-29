@@ -698,6 +698,12 @@
       var fontPx = 13 * fs;
       var linePx = fontPx * 1.6;
 
+      // Leave one rendered line of hard clearance above the folio. Canvas text
+      // metrics and browser layout can differ slightly because of justification,
+      // glyph metrics and sub-pixel rounding. This prevents a final continuation
+      // line from slipping underneath the page number.
+      usableH -= linePx * 1.05;
+
       // Verse paragraph spacing from .para p { margin-bottom:.85em; }
       var paraGapPx = fontPx * 0.85;
 
@@ -2906,4 +2912,4 @@
     boot();
   }
 })();
-        </script>
+          </script>
