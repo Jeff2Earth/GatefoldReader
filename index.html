@@ -142,7 +142,7 @@
   .gf-root .sheet { font-family: var(--font-body); color: var(--ink); box-sizing:border-box; width:100%; height:100%; margin:0; }
   .gf-root .sheet--text { background: var(--parchment); padding: 9% 7% 7%; display:flex; flex-direction:column; overflow:hidden; }
   .gf-root .running-head { font-family: var(--font-ui); font-size: 9.5px; letter-spacing:.13em; text-transform:uppercase; color: var(--ink-soft); text-align:center; margin-bottom: 7%; flex-shrink:0; }
-  .gf-root .para { font-size: 13px; line-height:1.6; text-align:justify; hyphens:auto; -webkit-hyphens:auto; flex:1; }
+  .gf-root .para { font-size: 13px; line-height:1.6; text-align:justify; hyphens:auto; -webkit-hyphens:auto; flex:1 1 auto; min-height:0; overflow:hidden; }
   .gf-root .para p { margin: 0 0 0.85em; }
   .gf-root .para p:last-child { margin-bottom: 0; }
   .gf-root .para .dropcap { float:left; font-family:var(--font-display); font-size:2.7em; line-height:.82; padding:.04em .07em 0 0; color:var(--burgundy); }
@@ -656,6 +656,80 @@
       return pages.length ? pages : [''];
     }
 
+    function getActualParaBoxMetrics(){
+      var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
+      var pageH = folded ? FOLDED_H : UNFOLDED_H;
+
+      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
+
+      var result = {
+        width: pageW * 0.86,
+        height: pageH * 0.72,
+        fontPx: 13 * fs,
+        linePx: 13 * fs * 1.6,
+        paraGapPx: 13 * fs * 0.85,
+        fontFamily: 'Georgia, "Times New Roman", serif'
+      };
+
+      try{
+        var root = document.querySelector('.gf-root');
+        if(!root) return result;
+
+        var sheet = document.createElement('div');
+        sheet.className = 'sheet sheet--text';
+        sheet.style.position = 'fixed';
+        sheet.style.left = '-10000px';
+        sheet.style.top = '0';
+        sheet.style.width = pageW + 'px';
+        sheet.style.height = pageH + 'px';
+        sheet.style.visibility = 'hidden';
+        sheet.style.pointerEvents = 'none';
+        sheet.style.boxSizing = 'border-box';
+
+        sheet.innerHTML =
+          '<div class="running-head">'+escapeHtml('MEASURE')+'</div>' +
+          '<div class="para"><p>Measure</p></div>' +
+          '<div class="folio">1</div>';
+
+        root.appendChild(sheet);
+
+        var para = sheet.querySelector('.para');
+        var p = sheet.querySelector('.para p');
+
+        if(para){
+          var r = para.getBoundingClientRect();
+          var cs = getComputedStyle(para);
+
+          if(r.width > 20) result.width = r.width;
+          if(r.height > 20) result.height = r.height;
+
+          var f = parseFloat(cs.fontSize);
+          if(isFinite(f) && f > 0) result.fontPx = f;
+
+          var lh = parseFloat(cs.lineHeight);
+          if(isFinite(lh) && lh > 0){
+            result.linePx = lh;
+          }
+
+          if(cs.fontFamily){
+            result.fontFamily = cs.fontFamily;
+          }
+        }
+
+        if(p){
+          var pcs = getComputedStyle(p);
+          var mb = parseFloat(pcs.marginBottom);
+          if(isFinite(mb) && mb >= 0){
+            result.paraGapPx = mb;
+          }
+        }
+
+        sheet.remove();
+      }catch(err){}
+
+      return result;
+    }
+
     function paginateParagraphsFast(paragraphs, chapterLabel){
       // CANVAS-BASED LARGE-BOOK PAGINATOR
       //
@@ -664,101 +738,22 @@
       // and fills each page by line count. A verse can continue naturally onto
       // the following page when the remaining lines do not fit.
 
-      var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
-      var pageH = folded ? FOLDED_H : UNFOLDED_H;
+      var metrics = getActualParaBoxMetrics();
 
-      // Match .sheet--text padding.
-      //
-      // IMPORTANT: CSS percentage padding/margins are resolved from the
-      // containing block WIDTH, even for top/bottom values. The previous
-      // Canvas paginator incorrectly used pageH here, which reserved far too
-      // much vertical space on a wide Fold display and left a large blank band
-      // at the bottom of every page.
-      var usableW = pageW * (1 - 0.07 - 0.07);
+      var usableW = metrics.width;
+      var usableH = metrics.height;
+      var fontPx = metrics.fontPx;
+      var linePx = metrics.linePx;
+      var paraGapPx = metrics.paraGapPx;
+      var fontFamily = metrics.fontFamily;
 
-      var padTopPx = pageW * 0.09;
-      var padBottomPx = pageW * 0.07;
-
-      var runningHeadPx = 10;
-      var folioPx = 11;
-      var headMargin = pageW * 0.07;
-      var folioMargin = pageW * 0.04;
-
-      var usableH =
-        pageH -
-        padTopPx -
-        padBottomPx -
-        runningHeadPx -
-        folioPx -
-        headMargin -
-        folioMargin;
-
-      // Read the REAL browser metrics once. This keeps Canvas fast while making
-      // its vertical accounting match the CSS that actually renders the page.
-      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
-      var fontPx = 13 * fs;
-      var linePx = fontPx * 1.6;
-      var paraGapPx = fontPx * 0.85;
-      var fontFamily = 'Georgia, "Times New Roman", serif';
-
-      try{
-        var root = document.querySelector('.gf-root');
-        if(root){
-          var probe = document.createElement('div');
-          probe.className = 'para';
-          probe.style.position = 'fixed';
-          probe.style.left = '-9999px';
-          probe.style.top = '0';
-          probe.style.width = Math.max(100, usableW) + 'px';
-          probe.style.visibility = 'hidden';
-          probe.style.pointerEvents = 'none';
-
-          var pp = document.createElement('p');
-          pp.textContent = 'Measure';
-          probe.appendChild(pp);
-          root.appendChild(probe);
-
-          var cs = getComputedStyle(probe);
-          var pcs = getComputedStyle(pp);
-
-          if(cs){
-            if(cs.fontFamily) fontFamily = cs.fontFamily;
-
-            var measuredFont = parseFloat(cs.fontSize);
-            if(isFinite(measuredFont) && measuredFont > 0){
-              fontPx = measuredFont;
-            }
-
-            var measuredLine = parseFloat(cs.lineHeight);
-            if(isFinite(measuredLine) && measuredLine > 0){
-              linePx = measuredLine;
-            }else{
-              linePx = fontPx * 1.6;
-            }
-          }
-
-          if(pcs){
-            var measuredGap = parseFloat(pcs.marginBottom);
-            if(isFinite(measuredGap) && measuredGap >= 0){
-              paraGapPx = measuredGap;
-            }
-          }
-
-          probe.remove();
-        }
-      }catch(err){}
-
-      // Keep only a modest hard guard. The real font/line/margin values above
-      // now do most of the work, so we no longer need the oversized V4 reserve.
-      usableH -= linePx * 0.85;
-
-      // Small safety reserve for sub-pixel differences and justification.
-      usableW *= 0.985;
-      usableH *= 0.997;
+      // The main limit now comes from the browser's actual rendered .para box.
+      // Keep only tiny reserves for Canvas-vs-DOM sub-pixel differences.
+      usableW *= 0.992;
+      usableH -= Math.max(2, linePx * 0.20);
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
-
       ctx.font = fontPx.toFixed(2) + 'px ' + fontFamily;
 
       var spaceW = ctx.measureText(' ').width || (fontPx * 0.33);
@@ -2947,4 +2942,4 @@
     boot();
   }
 })();
-</script>
+          </script>
