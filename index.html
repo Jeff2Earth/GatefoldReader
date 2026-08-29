@@ -53,6 +53,8 @@
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Load Book</button>
       <button id="gf-toolbar-bookmark" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Bookmark</button>
+      <button id="gf-toolbar-debug" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
+        background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Debug</button>
       <button id="gf-font-down" aria-label="Decrease font size" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:var(--gilt);">A−</button>
       <button id="gf-font-up" aria-label="Increase font size" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
@@ -787,6 +789,18 @@
       // Small safety reserve for sub-pixel differences and justification.
       usableW *= 0.975;
       usableH *= 0.997;
+
+      window.__gfDebug = window.__gfDebug || {};
+      window.__gfDebug.pageW = pageW;
+      window.__gfDebug.pageH = pageH;
+      window.__gfDebug.usableW = usableW;
+      window.__gfDebug.usableH = usableH;
+      window.__gfDebug.fontPx = fontPx;
+      window.__gfDebug.linePx = linePx;
+      window.__gfDebug.paraGapPx = paraGapPx;
+      window.__gfDebug.folded = folded;
+      window.__gfDebug.fontScale = fontScale;
+      window.__gfDebug.calLabel = calLabel;
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2766,6 +2780,58 @@
       setTimeout(function(){ fileInput.click(); }, 40);
     });
 
+    var toolbarDebug = document.getElementById('gf-toolbar-debug');
+    toolbarDebug.addEventListener('click', function(){
+      var d = window.__gfDebug || {};
+      var currentPageEl = document.querySelector('#flipbook .tpage .para, #flipbook .even .para, #flipbook .odd .para');
+      var liveInfo = '';
+      try{
+        var pages = document.querySelectorAll('#flipbook .tpage');
+        var visible = null;
+        for(var i=0;i<pages.length;i++){
+          var r = pages[i].getBoundingClientRect();
+          if(r.width>0 && r.height>0 && r.top < window.innerHeight && r.bottom > 0){
+            var p = pages[i].querySelector('.para');
+            if(p){
+              var pr = p.getBoundingClientRect();
+              liveInfo += 'visible page rect: ' + Math.round(pr.width) + 'x' + Math.round(pr.height) +
+                ', scrollH: ' + p.scrollHeight + ', clientH: ' + p.clientHeight +
+                ', blankPx: ' + (p.clientHeight - p.scrollHeight) + '\\n';
+            }
+          }
+        }
+      }catch(e){ liveInfo = 'live measure error: ' + e.message; }
+
+      var msg =
+        'folded: ' + d.folded + '\\n' +
+        'fontScale: ' + d.fontScale + '\\n' +
+        'calLabel: "' + d.calLabel + '"\\n' +
+        'pageW (used for pagination): ' + Math.round(d.pageW) + '\\n' +
+        'pageH (used for pagination): ' + Math.round(d.pageH) + '\\n' +
+        'usableW: ' + Math.round(d.usableW) + '\\n' +
+        'usableH: ' + Math.round(d.usableH) + '\\n' +
+        'fontPx: ' + d.fontPx + '\\n' +
+        'linePx: ' + d.linePx + '\\n' +
+        'FOLDED_W/H: ' + Math.round(FOLDED_W) + ' / ' + Math.round(FOLDED_H) + '\\n' +
+        'UNFOLDED_W/H: ' + Math.round(UNFOLDED_W) + ' / ' + Math.round(UNFOLDED_H) + '\\n' +
+        'window.innerWidth/Height: ' + window.innerWidth + ' / ' + window.innerHeight + '\\n' +
+        '--- live on-screen page ---\\n' + liveInfo;
+
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.92);color:#fff;'+
+        'font-family:monospace;font-size:13px;padding:20px;overflow:auto;white-space:pre-wrap;';
+      var closeBtn = document.createElement('button');
+      closeBtn.textContent = 'Close';
+      closeBtn.style.cssText = 'margin-bottom:12px;padding:8px 16px;border-radius:8px;border:1px solid #C6A15B;background:#222;color:#C6A15B;font-size:14px;';
+      closeBtn.addEventListener('click', function(){ overlay.remove(); });
+      overlay.appendChild(closeBtn);
+      var pre = document.createElement('div');
+      pre.textContent = msg;
+      overlay.appendChild(pre);
+      document.body.appendChild(overlay);
+      closeToolbar();
+    });
+
     toolbarBookmark.addEventListener('click', function(){
       toggleBookmark();
       closeToolbar();
@@ -3054,4 +3120,4 @@
     boot();
   }
 })();
-</script>
+      </script>
