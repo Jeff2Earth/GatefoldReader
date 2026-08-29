@@ -693,29 +693,14 @@
         headMargin -
         folioMargin;
 
-      // Current reader font. applyFontScale() uses 13px * fontScale.
+      // Read the REAL browser metrics once. This keeps Canvas fast while making
+      // its vertical accounting match the CSS that actually renders the page.
       var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
       var fontPx = 13 * fs;
       var linePx = fontPx * 1.6;
-
-      // Browser-rendered justified text can consume more vertical room than
-      // Canvas predicts, especially at large fonts. Protect the folio with two
-      // full rendered lines plus one normal paragraph gap so a borderline verse
-      // continuation moves to the next page instead of painting below the page
-      // number.
       var paraGapPx = fontPx * 0.85;
-      usableH -= (linePx * 2.0) + paraGapPx;
-
-      // Small safety reserve prevents borderline clipping from sub-pixel/font
-      // differences between Canvas metrics and browser text rendering.
-      usableW *= 0.985;
-      usableH *= 0.992;
-
-      var canvas = document.createElement('canvas');
-      var ctx = canvas.getContext('2d');
-
-      // Use the computed paragraph font family when available.
       var fontFamily = 'Georgia, "Times New Roman", serif';
+
       try{
         var root = document.querySelector('.gf-root');
         if(root){
@@ -724,13 +709,55 @@
           probe.style.position = 'fixed';
           probe.style.left = '-9999px';
           probe.style.top = '0';
+          probe.style.width = Math.max(100, usableW) + 'px';
           probe.style.visibility = 'hidden';
+          probe.style.pointerEvents = 'none';
+
+          var pp = document.createElement('p');
+          pp.textContent = 'Measure';
+          probe.appendChild(pp);
           root.appendChild(probe);
+
           var cs = getComputedStyle(probe);
-          if(cs && cs.fontFamily) fontFamily = cs.fontFamily;
+          var pcs = getComputedStyle(pp);
+
+          if(cs){
+            if(cs.fontFamily) fontFamily = cs.fontFamily;
+
+            var measuredFont = parseFloat(cs.fontSize);
+            if(isFinite(measuredFont) && measuredFont > 0){
+              fontPx = measuredFont;
+            }
+
+            var measuredLine = parseFloat(cs.lineHeight);
+            if(isFinite(measuredLine) && measuredLine > 0){
+              linePx = measuredLine;
+            }else{
+              linePx = fontPx * 1.6;
+            }
+          }
+
+          if(pcs){
+            var measuredGap = parseFloat(pcs.marginBottom);
+            if(isFinite(measuredGap) && measuredGap >= 0){
+              paraGapPx = measuredGap;
+            }
+          }
+
           probe.remove();
         }
       }catch(err){}
+
+      // Keep only a modest hard guard. The real font/line/margin values above
+      // now do most of the work, so we no longer need the oversized V4 reserve.
+      usableH -= linePx * 0.85;
+
+      // Small safety reserve for sub-pixel differences and justification.
+      usableW *= 0.985;
+      usableH *= 0.997;
+
+      var canvas = document.createElement('canvas');
+      var ctx = canvas.getContext('2d');
 
       ctx.font = fontPx.toFixed(2) + 'px ' + fontFamily;
 
@@ -813,8 +840,17 @@
             continue;
           }
 
-          // Nothing useful remains on this page: start the verse on a fresh page.
           var room = usableH - usedH;
+
+          // Never begin a new verse/paragraph unless there is enough physical
+          // room for at least one complete rendered line PLUS that paragraph's
+          // bottom spacing. This prevents a new verse number from appearing
+          // below/through the folio area.
+          if(pageParts.length && room < (linePx + paraGapPx)){
+            flushPage();
+            continue;
+          }
+
           var fitLines = linesThatFit(room - paraGapPx, lines.length);
 
           if(fitLines <= 0){
