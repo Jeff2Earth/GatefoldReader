@@ -915,7 +915,7 @@
           // amount of the page would otherwise sit blank, fall through to
           // the split logic below instead, so the page actually fills.
           var roomBeforeDefer = usableH - usedH;
-          var wasteThreshold = usableH * 0.18;
+          var wasteThreshold = usableH * 0.04;
           if(pageParts.length && paragraphHeight <= usableH && roomBeforeDefer <= wasteThreshold){
             flushPage();
             continue;
