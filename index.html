@@ -617,23 +617,50 @@
     }
 
     function paginateParagraphsFast(paragraphs){
-      // Estimate capacity from the current physical page area. Keep this
-      // deliberately conservative so text never runs off the bottom.
+      // Fast paginator for very large books such as the Bible.
+      //
+      // The previous version estimated page capacity from screen area only.
+      // That meant A+ enlarged the rendered text without reducing how much
+      // text was assigned to the page, so the bottom lines could be clipped.
+      //
+      // Keep this fast path, but make its capacity depend on the CURRENT font
+      // size in both horizontal and vertical directions. Approximate capacity
+      // therefore falls with fontScale squared.
+
       var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
       var pageH = folded ? FOLDED_H : UNFOLDED_H;
       var areaScale = (pageW * pageH) / (250 * 430);
-      var TARGET_WORDS = Math.max(82, Math.min(210, Math.round(108 * areaScale)));
-      var MAX_WORDS = Math.max(TARGET_WORDS + 14, Math.min(235, Math.round(124 * areaScale)));
+
+      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
+      var fontPenalty = fs * fs;
+
+      // Preserve roughly the same density at fontScale=1 while becoming
+      // increasingly conservative as the type grows.
+      var TARGET_UNITS = Math.max(
+        42,
+        Math.min(205, Math.round((108 * areaScale) / fontPenalty))
+      );
+
+      var MAX_UNITS = Math.max(
+        TARGET_UNITS + 10,
+        Math.min(220, Math.round((122 * areaScale) / fontPenalty))
+      );
+
+      // Every paragraph/verse consumes vertical margin in addition to its
+      // words. Counting that margin prevents verse-heavy Bible pages from
+      // overflowing even when the raw word count looks acceptable.
+      var PARA_COST = Math.max(3, Math.round(4 * fs));
+
       var pages = [];
       var pageHtml = '';
-      var pageWords = 0;
+      var pageUnits = 0;
       var firstPage = true;
 
       function flush(){
         if(pageHtml){
           pages.push(pageHtml);
           pageHtml = '';
-          pageWords = 0;
+          pageUnits = 0;
           firstPage = false;
         }
       }
@@ -641,35 +668,58 @@
       for(var i=0;i<paragraphs.length;i++){
         var raw = String(paragraphs[i] || '').trim();
         if(!raw) continue;
+
         var words = raw.split(/\s+/).filter(Boolean);
+        var paraUnits = words.length + PARA_COST;
 
-        // Split only genuinely long source paragraphs.
-        if(words.length > MAX_WORDS){
+        // Split only paragraphs that genuinely cannot fit on one page.
+        if(paraUnits > MAX_UNITS){
           var offset = 0;
+
           while(offset < words.length){
-            var room = Math.max(40, TARGET_WORDS - pageWords);
-            var take = Math.min(room, words.length - offset);
+            var available = TARGET_UNITS - pageUnits - PARA_COST;
+
+            if(pageUnits > 0 && available < 12){
+              flush();
+              available = TARGET_UNITS - PARA_COST;
+            }
+
+            var take = Math.max(
+              1,
+              Math.min(words.length - offset, Math.floor(Math.max(12, available)))
+            );
+
             var chunk = words.slice(offset, offset + take).join(' ');
+            var chunkUnits = take + PARA_COST;
 
-            if(pageWords && pageWords + take > MAX_WORDS) flush();
+            if(pageUnits > 0 && pageUnits + chunkUnits > MAX_UNITS){
+              flush();
+            }
 
-            pageHtml += wrapParagraphHtml(chunk, firstPage && pageWords===0);
-            pageWords += take;
+            pageHtml += wrapParagraphHtml(
+              chunk,
+              firstPage && pageUnits===0 && offset===0
+            );
+
+            pageUnits += chunkUnits;
             offset += take;
 
-            if(pageWords >= TARGET_WORDS) flush();
+            if(pageUnits >= TARGET_UNITS){
+              flush();
+            }
           }
+
           continue;
         }
 
-        if(pageWords && pageWords + words.length > MAX_WORDS){
+        if(pageUnits > 0 && pageUnits + paraUnits > MAX_UNITS){
           flush();
         }
 
-        pageHtml += wrapParagraphHtml(raw, firstPage && pageWords===0);
-        pageWords += words.length;
+        pageHtml += wrapParagraphHtml(raw, firstPage && pageUnits===0);
+        pageUnits += paraUnits;
 
-        if(pageWords >= TARGET_WORDS){
+        if(pageUnits >= TARGET_UNITS){
           flush();
         }
       }
