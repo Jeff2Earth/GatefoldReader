@@ -676,6 +676,15 @@
       // at the bottom of every page.
       var usableW, usableH;
       try{
+        // For Bible content, every real page's running head is "BOOK CHAPTER"
+        // (e.g. "GENESIS 6"), which is much shorter than the book's full
+        // title. Calibrating against the title reserved extra height on every
+        // single page for a line that never actually appears. Calibrate
+        // against a realistically long book+chapter label instead.
+        var calLabel = chapterLabel;
+        if(typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length){
+          calLabel = 'SONG OF SOLOMON 8';
+        }
         var calEl = document.createElement('div');
         calEl.className = 'sheet sheet--text';
         calEl.style.position = 'fixed';
@@ -686,7 +695,7 @@
         calEl.style.visibility = 'hidden';
         calEl.style.pointerEvents = 'none';
         calEl.innerHTML =
-          '<div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
+          '<div class="running-head">'+escapeHtml(calLabel)+'</div>' +
           '<div class="para"></div>' +
           '<div class="folio">1</div>';
         document.querySelector('.gf-root').appendChild(calEl);
