@@ -616,216 +616,115 @@
       return pages.length ? pages : [''];
     }
 
-    function calibrateFastPageCapacity(paragraphs, chapterLabel){
-      // Measure ONE representative paragraph using the reader's actual page
-      // dimensions, padding, running head, folio, current font size and line
-      // height. This keeps the large-book path fast while making A+/A- affect
-      // pagination instead of merely enlarging text inside a fixed word count.
-      var sampleWords = [];
-      var sampleLimit = 420;
-
-      for(var i=0;i<paragraphs.length && sampleWords.length<sampleLimit;i++){
-        var ws = String(paragraphs[i] || '').trim().split(/\s+/).filter(Boolean);
-        for(var j=0;j<ws.length && sampleWords.length<sampleLimit;j++){
-          sampleWords.push(ws[j]);
-        }
-      }
-
-      if(!sampleWords.length){
-        return { target:90, max:105, paraCost:5 };
-      }
-
-      // Repeat the available source words if the opening material is unusually
-      // short so the binary search has enough text to fill a page.
-      var seed = sampleWords.slice();
-      while(sampleWords.length < sampleLimit && seed.length){
-        sampleWords = sampleWords.concat(seed);
-      }
-      sampleWords = sampleWords.slice(0, sampleLimit);
-
-      var lo = 1;
-      var hi = sampleWords.length;
-
-      while(lo < hi){
-        var mid = Math.ceil((lo + hi) / 2);
-        var h = wrapParagraphHtml(sampleWords.slice(0, mid).join(' '), false);
-
-        if(fitsInPage(chapterLabel || '', h)){
-          lo = mid;
-        }else{
-          hi = mid - 1;
-        }
-      }
-
-      var measuredMax = Math.max(24, lo);
-
-      // Bible/EPUB text often has many short verse paragraphs, each with its
-      // own bottom margin. Leave a healthy reserve rather than filling the
-      // measured single-paragraph page to 100%.
-      var target = Math.max(28, Math.floor(measuredMax * 0.76));
-      var max = Math.max(target + 8, Math.floor(measuredMax * 0.86));
-
-      // Paragraph spacing consumes roughly part of a text line. Charging each
-      // paragraph several "word units" makes verse-heavy pages break earlier.
-      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
-      var paraCost = Math.max(4, Math.round(5 * fs));
-
-      return {
-        target: target,
-        max: max,
-        paraCost: paraCost
-      };
-    }
-
-    function paginateParagraphsFast(paragraphs, chapterLabel){
-      // Large-book paginator:
-      // 1. Use the calibrated capacity only to create a QUICK candidate page.
-      // 2. BEFORE accepting that page, validate its actual rendered height with
-      //    fitsInPage() at the CURRENT font size.
-      // 3. If it overflows, move complete verses/paragraphs to the next page.
-      // 4. If one verse itself is too tall, split that verse with maxWordsFit().
+    function paginateParagraphsFast(paragraphs){
+      // Fast paginator for very large books such as the Bible.
       //
-      // This keeps Bible-sized books practical while making the final page
-      // boundary depend on real DOM layout rather than a word-count estimate.
+      // The previous version estimated page capacity from screen area only.
+      // That meant A+ enlarged the rendered text without reducing how much
+      // text was assigned to the page, so the bottom lines could be clipped.
+      //
+      // Keep this fast path, but make its capacity depend on the CURRENT font
+      // size in both horizontal and vertical directions. Approximate capacity
+      // therefore falls with fontScale squared.
 
-      var source = paragraphs.map(function(p){
-        return String(p || '').trim();
-      }).filter(Boolean);
+      var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
+      var pageH = folded ? FOLDED_H : UNFOLDED_H;
+      var areaScale = (pageW * pageH) / (250 * 430);
 
-      var cap = calibrateFastPageCapacity(source, chapterLabel);
-      var TARGET_UNITS = cap.target;
-      var MAX_UNITS = cap.max;
-      var PARA_COST = cap.paraCost;
+      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
+      var fontPenalty = fs * fs;
+
+      // Preserve roughly the same density at fontScale=1 while becoming
+      // increasingly conservative as the type grows.
+      var TARGET_UNITS = Math.max(
+        42,
+        Math.min(205, Math.round((108 * areaScale) / fontPenalty))
+      );
+
+      var MAX_UNITS = Math.max(
+        TARGET_UNITS + 10,
+        Math.min(220, Math.round((122 * areaScale) / fontPenalty))
+      );
+
+      // Every paragraph/verse consumes vertical margin in addition to its
+      // words. Counting that margin prevents verse-heavy Bible pages from
+      // overflowing even when the raw word count looks acceptable.
+      var PARA_COST = Math.max(3, Math.round(4 * fs));
 
       var pages = [];
-      var index = 0;
-      var carry = null;
+      var pageHtml = '';
+      var pageUnits = 0;
       var firstPage = true;
-      var guard = 0;
 
-      function paraUnits(text){
-        return String(text || '').split(/\s+/).filter(Boolean).length + PARA_COST;
+      function flush(){
+        if(pageHtml){
+          pages.push(pageHtml);
+          pageHtml = '';
+          pageUnits = 0;
+          firstPage = false;
+        }
       }
 
-      function makeHtml(items, isFirst){
-        var out = '';
-        for(var k=0;k<items.length;k++){
-          out += wrapParagraphHtml(items[k], isFirst && k===0);
-        }
-        return out;
-      }
+      for(var i=0;i<paragraphs.length;i++){
+        var raw = String(paragraphs[i] || '').trim();
+        if(!raw) continue;
 
-      while((index < source.length || carry) && guard < 50000){
-        guard++;
+        var words = raw.split(/\s+/).filter(Boolean);
+        var paraUnits = words.length + PARA_COST;
 
-        var items = [];
-        var units = 0;
+        // Split only paragraphs that genuinely cannot fit on one page.
+        if(paraUnits > MAX_UNITS){
+          var offset = 0;
 
-        // Start with any remainder from an oversized verse.
-        if(carry){
-          items.push(carry);
-          units += paraUnits(carry);
-          carry = null;
-        }
+          while(offset < words.length){
+            var available = TARGET_UNITS - pageUnits - PARA_COST;
 
-        // QUICKLY assemble a candidate page using the capacity estimate.
-        while(index < source.length){
-          var raw = source[index];
-          var u = paraUnits(raw);
+            if(pageUnits > 0 && available < 12){
+              flush();
+              available = TARGET_UNITS - PARA_COST;
+            }
 
-          if(items.length && units + u > MAX_UNITS){
-            break;
-          }
-
-          items.push(raw);
-          units += u;
-          index++;
-
-          if(units >= TARGET_UNITS){
-            break;
-          }
-        }
-
-        if(!items.length && index < source.length){
-          items.push(source[index++]);
-        }
-
-        var pageHtml = makeHtml(items, firstPage);
-
-        // TRUE validation against the actual page box/current font.
-        if(!fitsInPage(chapterLabel, pageHtml)){
-          // Move whole verses/paragraphs off the bottom until it fits.
-          while(items.length > 1 && !fitsInPage(chapterLabel, pageHtml)){
-            index--;
-            items.pop();
-            pageHtml = makeHtml(items, firstPage);
-          }
-
-          // If a single verse/paragraph itself is too tall, split it using the
-          // same real DOM measurement routine used by ordinary books.
-          if(items.length === 1 && !fitsInPage(chapterLabel, pageHtml)){
-            var rawOne = items[0];
-            var words = rawOne.split(/\s+/).filter(Boolean);
-
-            var fitCount = maxWordsFit(
-              chapterLabel,
-              '',
-              words,
-              firstPage
+            var take = Math.max(
+              1,
+              Math.min(words.length - offset, Math.floor(Math.max(12, available)))
             );
 
-            // Defensive fallback: always make forward progress.
-            if(fitCount <= 0){
-              fitCount = Math.max(1, Math.floor(words.length / 2));
+            var chunk = words.slice(offset, offset + take).join(' ');
+            var chunkUnits = take + PARA_COST;
+
+            if(pageUnits > 0 && pageUnits + chunkUnits > MAX_UNITS){
+              flush();
             }
 
-            var head = words.slice(0, fitCount).join(' ');
-            var tail = words.slice(fitCount).join(' ');
-
-            pageHtml = wrapParagraphHtml(head, firstPage);
-
-            if(tail){
-              carry = tail;
-            }
-          }
-        }
-
-        // Final safety check. In the unlikely event a page still does not fit,
-        // trim the final paragraph word-by-word rather than allowing clipping.
-        if(!fitsInPage(chapterLabel, pageHtml)){
-          var finalWords = items.length
-            ? String(items[items.length-1] || '').split(/\s+/).filter(Boolean)
-            : [];
-
-          if(finalWords.length > 1){
-            var prefixItems = items.slice(0, -1);
-            var prefixHtml = makeHtml(prefixItems, firstPage);
-            var lastIsFirst = firstPage && prefixItems.length===0;
-
-            var n = maxWordsFit(
-              chapterLabel,
-              prefixHtml,
-              finalWords,
-              lastIsFirst
+            pageHtml += wrapParagraphHtml(
+              chunk,
+              firstPage && pageUnits===0 && offset===0
             );
 
-            if(n > 0){
-              pageHtml =
-                prefixHtml +
-                wrapParagraphHtml(finalWords.slice(0,n).join(' '), lastIsFirst);
+            pageUnits += chunkUnits;
+            offset += take;
 
-              var rest = finalWords.slice(n).join(' ');
-              if(rest){
-                carry = rest;
-              }
+            if(pageUnits >= TARGET_UNITS){
+              flush();
             }
           }
+
+          continue;
         }
 
-        pages.push(pageHtml);
-        firstPage = false;
+        if(pageUnits > 0 && pageUnits + paraUnits > MAX_UNITS){
+          flush();
+        }
+
+        pageHtml += wrapParagraphHtml(raw, firstPage && pageUnits===0);
+        pageUnits += paraUnits;
+
+        if(pageUnits >= TARGET_UNITS){
+          flush();
+        }
       }
 
+      flush();
       return pages.length ? pages : [''];
     }
 
@@ -838,7 +737,7 @@
         if(totalWords > 12000) break;
       }
       return totalWords > 12000
-        ? paginateParagraphsFast(paragraphs, chapterLabel)
+        ? paginateParagraphsFast(paragraphs)
         : paginateParagraphsMeasured(paragraphs, chapterLabel);
     }
 
@@ -1910,6 +1809,29 @@
       e.stopPropagation();
     }
 
+    function commitTurnJsPage(g){
+      if(!g || !g.page || !g.page.length) return false;
+
+      try{
+        var fd = g.page.data().f;
+        if(!fd || !fd.opts || !fd.opts.turn) return false;
+
+        var turn = fd.opts.turn;
+        var td = turn.data();
+
+        // This is the critical Turn.js 3 step normally performed by its own
+        // _released() handler. Without tpage, turnPage() can animate the curl
+        // beautifully and then restore the SAME page when the animation ends.
+        td.tpage = fd.opts.next;
+        turn.turn('update');
+
+        g.page.flip('turnPage', g.corner);
+        return true;
+      }catch(err){
+        return false;
+      }
+    }
+
     function endQuadrantTurn(e, cancelled){
       var g = quadrantGesture;
       if(!g || (e.pointerId !== undefined && g.pointerId !== e.pointerId)) return;
@@ -1917,46 +1839,52 @@
       quadrantGesture = null;
 
       try{
+        // A stationary press/hold never started Turn.js, so there is nothing
+        // to retract and no visual "page goes back" behavior.
         if(!g.activated){
-          // Pure touch/hold with no directional movement never started Turn.js.
           g.finished = true;
         }else{
+          var totalDx = g.lastX-g.startX;
           var totalDy = g.lastY-g.startY;
+
+          // Once activation happened, Gatefold has already accepted the tiny
+          // directional stroke. Android pointercancel/lost capture cannot undo it.
           g.finished = true;
 
           if(g.autoPullRaf){
-            try{ cancelAnimationFrame(g.autoPullRaf); }catch(err){}
+            try{ cancelAnimationFrame(g.autoPullRaf); }catch(e){}
           }
 
-          // Force the logical drag point JUST BEYOND the opposite edge before
-          // releasing. Turn.js 3 treats an out-of-bounds release as a committed
-          // page turn regardless of how long the user paused while holding it.
-          //
-          // Right page: start near its right edge and finish beyond its left.
-          // Left page:  start near its left edge and finish beyond its right.
-          var nativeCommitX = g.virtualStartX +
-            (g.wantRight ? -1 : 1) * (g.pageW * 1.12);
-
-          var nativeCommitY = g.virtualStartY + totalDy * DRAG_GAIN_Y;
+          var finishX = g.virtualStartX +
+            (g.wantRight ? -1 : 1) * (g.pageW * 0.90);
+          var finishY = g.virtualStartY + totalDy * DRAG_GAIN_Y;
 
           try{
-            g.page.flip(
-              '_eventMove',
-              syntheticTouchEvent(nativeCommitX, nativeCommitY)
-            );
-          }catch(err){}
+            g.page.flip('_eventMove', syntheticTouchEvent(finishX,finishY));
+          }catch(e){}
 
-          // Let Turn.js perform its OWN native release bookkeeping and its
-          // original smooth curl/snap animation. This avoids manually invoking
-          // turnPage() and bypassing internal state.
-          try{
-            g.page.flip('_eventEnd');
-          }catch(err){
-            // Public API fallback only if the native private release fails.
+          // Commit the target page in Turn.js BEFORE asking it to finish
+          // the curl. This is what its native release handler does internally.
+          var beforeBookPage = 0;
+          try{ beforeBookPage = flipEl.turn('page') || 0; }catch(e){}
+
+          if(!commitTurnJsPage(g)){
             try{
               if(g.wantRight) flipEl.turn('next');
               else flipEl.turn('previous');
-            }catch(err2){}
+            }catch(e2){}
+          }else{
+            // Belt-and-suspenders check: after the normal Turn.js finish
+            // animation, verify that its logical page actually changed.
+            setTimeout(function(){
+              try{
+                var nowPage = flipEl.turn('page') || 0;
+                if(beforeBookPage && nowPage === beforeBookPage){
+                  if(g.wantRight) flipEl.turn('next');
+                  else flipEl.turn('previous');
+                }
+              }catch(e){}
+            }, 900);
           }
         }
       }catch(err){
@@ -1969,9 +1897,7 @@
       }
 
       try{
-        if(e.pointerId !== undefined){
-          quadrantOverlay.releasePointerCapture(e.pointerId);
-        }
+        if(e.pointerId !== undefined) quadrantOverlay.releasePointerCapture(e.pointerId);
       }catch(err){}
 
       if(e.preventDefault) e.preventDefault();
@@ -2816,4 +2742,4 @@
     boot();
   }
 })();
-</script>
+                            </script>
