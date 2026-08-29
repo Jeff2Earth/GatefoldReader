@@ -674,43 +674,24 @@
       // Canvas paginator incorrectly used pageH here, which reserved far too
       // much vertical space on a wide Fold display and left a large blank band
       // at the bottom of every page.
-      var usableW, usableH;
-      try{
-        // For Bible content, every real page's running head is "BOOK CHAPTER"
-        // (e.g. "GENESIS 6"), which is much shorter than the book's full
-        // title. Calibrating against the title reserved extra height on every
-        // single page for a line that never actually appears. Calibrate
-        // against a realistically long book+chapter label instead.
-        var calLabel = chapterLabel;
-        if(typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length){
-          calLabel = 'SONG OF SOLOMON 8';
-        }
-        var calEl = document.createElement('div');
-        calEl.className = 'sheet sheet--text';
-        calEl.style.position = 'fixed';
-        calEl.style.left = '-9999px';
-        calEl.style.top = '0';
-        calEl.style.width = pageW + 'px';
-        calEl.style.height = pageH + 'px';
-        calEl.style.visibility = 'hidden';
-        calEl.style.pointerEvents = 'none';
-        calEl.innerHTML =
-          '<div class="running-head">'+escapeHtml(calLabel)+'</div>' +
-          '<div class="para"></div>' +
-          '<div class="folio">1</div>';
-        document.querySelector('.gf-root').appendChild(calEl);
-        var calPara = calEl.querySelector('.para');
-        var calRect = calPara.getBoundingClientRect();
-        usableW = calRect.width;
-        usableH = calRect.height;
-        calEl.remove();
-      }catch(err){ usableW = 0; usableH = 0; }
+      var usableW = pageW * (1 - 0.07 - 0.07);
 
-      if(!usableW || !usableH){
-        // Fallback only if real measurement failed for some reason.
-        usableW = pageW * (1 - 0.07 - 0.07);
-        usableH = pageH - pageW*0.09 - pageW*0.07 - 20 - 11 - pageW*0.07 - pageW*0.04;
-      }
+      var padTopPx = pageW * 0.09;
+      var padBottomPx = pageW * 0.07;
+
+      var runningHeadPx = 10;
+      var folioPx = 11;
+      var headMargin = pageW * 0.07;
+      var folioMargin = pageW * 0.04;
+
+      var usableH =
+        pageH -
+        padTopPx -
+        padBottomPx -
+        runningHeadPx -
+        folioPx -
+        headMargin -
+        folioMargin;
 
       // Read the REAL browser metrics once. This keeps Canvas fast while making
       // its vertical accounting match the CSS that actually renders the page.
@@ -723,25 +704,19 @@
       try{
         var root = document.querySelector('.gf-root');
         if(root){
-          var probeWrap = document.createElement('div');
-          probeWrap.className = 'sheet sheet--text';
-          probeWrap.style.position = 'fixed';
-          probeWrap.style.left = '-9999px';
-          probeWrap.style.top = '0';
-          probeWrap.style.width = pageW + 'px';
-          probeWrap.style.height = pageH + 'px';
-          probeWrap.style.visibility = 'hidden';
-          probeWrap.style.pointerEvents = 'none';
-
           var probe = document.createElement('div');
           probe.className = 'para';
+          probe.style.position = 'fixed';
+          probe.style.left = '-9999px';
+          probe.style.top = '0';
           probe.style.width = Math.max(100, usableW) + 'px';
+          probe.style.visibility = 'hidden';
+          probe.style.pointerEvents = 'none';
 
           var pp = document.createElement('p');
           pp.textContent = 'Measure';
           probe.appendChild(pp);
-          probeWrap.appendChild(probe);
-          root.appendChild(probeWrap);
+          root.appendChild(probe);
 
           var cs = getComputedStyle(probe);
           var pcs = getComputedStyle(pp);
@@ -769,16 +744,16 @@
             }
           }
 
-          probeWrap.remove();
+          probe.remove();
         }
       }catch(err){}
 
       // Keep only a modest hard guard. The real font/line/margin values above
       // now do most of the work, so we no longer need the oversized V4 reserve.
-      usableH -= linePx * 0.65;
+      usableH -= linePx * 1.85;
 
       // Small safety reserve for sub-pixel differences and justification.
-      usableW *= 0.975;
+      usableW *= 0.985;
       usableH *= 0.997;
 
       var canvas = document.createElement('canvas');
@@ -844,35 +819,6 @@
         ));
       }
 
-      function realFitCheck(existingHtml, candidateHtml){
-        var testEl = document.createElement('div');
-        testEl.className = 'sheet sheet--text';
-        testEl.style.position = 'fixed';
-        testEl.style.left = '-9999px';
-        testEl.style.top = '0';
-        testEl.style.width = pageW + 'px';
-        testEl.style.height = pageH + 'px';
-        testEl.style.visibility = 'hidden';
-        testEl.style.pointerEvents = 'none';
-        testEl.innerHTML =
-          '<div class="running-head">'+escapeHtml(calLabel)+'</div>' +
-          '<div class="para">'+existingHtml+candidateHtml+'</div>' +
-          '<div class="folio">1</div>';
-        document.querySelector('.gf-root').appendChild(testEl);
-        var paraEl = testEl.querySelector('.para');
-        var fits = paraEl.scrollHeight <= paraEl.clientHeight + 1;
-        testEl.remove();
-        return fits;
-      }
-
-      function existingPageHtml(){
-        var out = '';
-        for(var i=0;i<pageParts.length;i++){
-          out += wrapParagraphHtml(pageParts[i], firstPage && i===0);
-        }
-        return out;
-      }
-
       for(var p=0;p<paragraphs.length;p++){
         var raw = String(paragraphs[p] || '').trim();
         if(!raw) continue;
@@ -890,20 +836,6 @@
           if(usedH + paragraphHeight <= usableH){
             pageParts.push(remaining.join(' '));
             usedH += paragraphHeight;
-            remaining = [];
-            continue;
-          }
-
-          // The fast estimate says this verse does not fit. Before accepting
-          // that and moving it to the next page (leaving blank space behind
-          // if the estimate was wrong), verify against a real render. This
-          // is one DOM check per boundary decision, not per word, so it
-          // stays fast while catching any case where Canvas underestimated
-          // how much actually fits.
-          var wholeCandidateHtml = wrapParagraphHtml(remaining.join(' '), firstPage && !pageParts.length);
-          if(realFitCheck(existingPageHtml(), wholeCandidateHtml)){
-            pageParts.push(remaining.join(' '));
-            usedH = usableH; // treat as full; exact value no longer drives decisions this page
             remaining = [];
             continue;
           }
@@ -943,7 +875,6 @@
             // viewport/font combination. Force one line so pagination progresses.
             fitLines = 1;
           }
-
 
           // Determine the word count represented by the lines that fit.
           var takeWords = 0;
