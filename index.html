@@ -908,14 +908,15 @@
             continue;
           }
 
-          // KEEP NORMAL VERSES TOGETHER:
-          // If this entire verse/paragraph WOULD fit on a fresh page, but does
-          // not fit in the space left on the current page, move the whole thing
-          // to the next page instead of starting it at the bottom and splitting it.
-          //
-          // Only paragraphs that are themselves taller than a complete page
-          // are allowed to split across pages.
-          if(pageParts.length && paragraphHeight <= usableH){
+          // KEEP NORMAL VERSES TOGETHER (bounded):
+          // If this entire verse/paragraph would fit on a fresh page but not
+          // in the remaining space, only defer it whole when that remaining
+          // space is small (so little would be wasted). If a meaningful
+          // amount of the page would otherwise sit blank, fall through to
+          // the split logic below instead, so the page actually fills.
+          var roomBeforeDefer = usableH - usedH;
+          var wasteThreshold = usableH * 0.18;
+          if(pageParts.length && paragraphHeight <= usableH && roomBeforeDefer <= wasteThreshold){
             flushPage();
             continue;
           }
@@ -3028,4 +3029,4 @@
     boot();
   }
 })();
-                                    </script>
+</script>
