@@ -537,10 +537,6 @@
       var pageH = folded ? FOLDED_H : UNFOLDED_H;
       measureEl.style.width = pageW + 'px';
       measureEl.style.height = pageH + 'px';
-      measureEl.style.minHeight = pageH + 'px';
-      measureEl.style.maxHeight = pageH + 'px';
-      measureEl.style.overflow = 'hidden';
-      measureEl.style.boxSizing = 'border-box';
       measureEl.style.visibility = 'hidden';
       measureEl.style.pointerEvents = 'none';
       document.querySelector('.gf-root').appendChild(measureEl);
@@ -661,93 +657,182 @@
     }
 
     function paginateParagraphsFast(paragraphs, chapterLabel){
+      // CANVAS-BASED LARGE-BOOK PAGINATOR
+      //
+      // This avoids thousands of hidden DOM fit checks. It measures actual word
+      // widths with CanvasRenderingContext2D.measureText(), builds wrapped lines,
+      // and fills each page by line count. A verse can continue naturally onto
+      // the following page when the remaining lines do not fit.
+
+      var pageW = folded ? FOLDED_W : Math.max(240, UNFOLDED_W/2);
+      var pageH = folded ? FOLDED_H : UNFOLDED_H;
+
+      // Match .sheet--text padding: 9% top, 7% left/right, 7% bottom.
+      var usableW = pageW * (1 - 0.07 - 0.07);
+      var usableH = pageH * (1 - 0.09 - 0.07);
+
+      // Reserve vertical space for the running head + folio + their margins.
+      // These values mirror the current CSS closely enough for deterministic,
+      // fast pagination while still leaving a safety margin.
+      var runningHeadPx = 10;
+      var folioPx = 11;
+      var headMargin = pageH * 0.07;
+      var folioMargin = pageH * 0.04;
+
+      usableH -= (runningHeadPx + folioPx + headMargin + folioMargin);
+
+      // Current reader font. applyFontScale() uses 13px * fontScale.
+      var fs = Math.max(.78, Math.min(1.45, Number(fontScale) || 1));
+      var fontPx = 13 * fs;
+      var linePx = fontPx * 1.6;
+
+      // Verse paragraph spacing from .para p { margin-bottom:.85em; }
+      var paraGapPx = fontPx * 0.85;
+
+      // Small safety reserve prevents borderline clipping from sub-pixel/font
+      // differences between Canvas metrics and browser text rendering.
+      usableW *= 0.97;
+      usableH *= 0.96;
+
+      var canvas = document.createElement('canvas');
+      var ctx = canvas.getContext('2d');
+
+      // Use the computed paragraph font family when available.
+      var fontFamily = 'Georgia, "Times New Roman", serif';
+      try{
+        var root = document.querySelector('.gf-root');
+        if(root){
+          var probe = document.createElement('div');
+          probe.className = 'para';
+          probe.style.position = 'fixed';
+          probe.style.left = '-9999px';
+          probe.style.top = '0';
+          probe.style.visibility = 'hidden';
+          root.appendChild(probe);
+          var cs = getComputedStyle(probe);
+          if(cs && cs.fontFamily) fontFamily = cs.fontFamily;
+          probe.remove();
+        }
+      }catch(err){}
+
+      ctx.font = fontPx.toFixed(2) + 'px ' + fontFamily;
+
+      var spaceW = ctx.measureText(' ').width || (fontPx * 0.33);
+
+      function wrapWordsToLines(words){
+        var lines = [];
+        var current = [];
+        var currentW = 0;
+
+        for(var i=0;i<words.length;i++){
+          var word = words[i];
+          if(!word) continue;
+
+          var ww = ctx.measureText(word).width;
+          var nextW = current.length ? currentW + spaceW + ww : ww;
+
+          if(current.length && nextW > usableW){
+            lines.push(current);
+            current = [word];
+            currentW = ww;
+          }else{
+            current.push(word);
+            currentW = nextW;
+          }
+        }
+
+        if(current.length) lines.push(current);
+        return lines;
+      }
+
       var pages = [];
-      var pageHtml = '';
+      var pageParts = [];
+      var usedH = 0;
       var firstPage = true;
 
-      function flush(){
-        if(pageHtml){
-          pages.push(pageHtml);
-          pageHtml = '';
-          firstPage = false;
+      function flushPage(){
+        if(!pageParts.length) return;
+
+        var out = '';
+        for(var i=0;i<pageParts.length;i++){
+          out += wrapParagraphHtml(
+            pageParts[i],
+            firstPage && i===0
+          );
         }
+
+        pages.push(out);
+        pageParts = [];
+        usedH = 0;
+        firstPage = false;
       }
 
-      function appendTextPiece(text){
-        if(!text) return;
-        pageHtml += wrapParagraphHtml(
-          text,
-          firstPage && pageHtml === ''
-        );
+      function linesThatFit(remainingHeight, totalLines){
+        if(remainingHeight <= 0) return 0;
+        return Math.max(0, Math.min(
+          totalLines,
+          Math.floor(remainingHeight / linePx)
+        ));
       }
 
-      for(var i=0;i<paragraphs.length;i++){
-        var raw = String(paragraphs[i] || '').trim();
+      for(var p=0;p<paragraphs.length;p++){
+        var raw = String(paragraphs[p] || '').trim();
         if(!raw) continue;
 
-        var wholeCandidate =
-          pageHtml +
-          wrapParagraphHtml(raw, firstPage && pageHtml === '');
+        var words = raw.split(/\s+/).filter(Boolean);
+        if(!words.length) continue;
 
-        if(fitsInPage(chapterLabel, wholeCandidate)){
-          pageHtml = wholeCandidate;
-          continue;
-        }
+        var remaining = words.slice();
 
-        var remainingWords = raw.split(/\s+/).filter(Boolean);
+        while(remaining.length){
+          var lines = wrapWordsToLines(remaining);
+          var paragraphHeight = lines.length * linePx + paraGapPx;
 
-        while(remainingWords.length){
-          var isFirstPara = firstPage && pageHtml === '';
+          // Whole verse/paragraph fits in the remaining page area.
+          if(usedH + paragraphHeight <= usableH){
+            pageParts.push(remaining.join(' '));
+            usedH += paragraphHeight;
+            remaining = [];
+            continue;
+          }
 
-          var fitCount = maxWordsFit(
-            chapterLabel,
-            pageHtml,
-            remainingWords,
-            isFirstPara
-          );
+          // Nothing useful remains on this page: start the verse on a fresh page.
+          var room = usableH - usedH;
+          var fitLines = linesThatFit(room - paraGapPx, lines.length);
 
-          if(fitCount > 0){
-            appendTextPiece(
-              remainingWords.slice(0, fitCount).join(' ')
-            );
-
-            remainingWords = remainingWords.slice(fitCount);
-
-            if(remainingWords.length){
-              flush();
+          if(fitLines <= 0){
+            if(pageParts.length){
+              flushPage();
+              continue;
             }
 
-            continue;
+            // Empty page but one line technically doesn't fit due to an extreme
+            // viewport/font combination. Force one line so pagination progresses.
+            fitLines = 1;
           }
 
-          if(pageHtml){
-            flush();
-            continue;
+          // Determine the word count represented by the lines that fit.
+          var takeWords = 0;
+          for(var li=0; li<fitLines && li<lines.length; li++){
+            takeWords += lines[li].length;
           }
 
-          fitCount = Math.max(
-            1,
-            maxWordsFit(
-              chapterLabel,
-              '',
-              remainingWords,
-              firstPage
-            )
-          );
+          takeWords = Math.max(1, Math.min(takeWords, remaining.length));
 
-          appendTextPiece(
-            remainingWords.slice(0, fitCount).join(' ')
-          );
+          var piece = remaining.slice(0, takeWords).join(' ');
+          pageParts.push(piece);
 
-          remainingWords = remainingWords.slice(fitCount);
+          // This piece consumes all remaining practical space on the page.
+          usedH += fitLines * linePx + paraGapPx;
+          remaining = remaining.slice(takeWords);
 
-          if(remainingWords.length){
-            flush();
+          if(remaining.length){
+            flushPage();
           }
         }
       }
 
-      flush();
+      flushPage();
       return pages.length ? pages : [''];
     }
 
@@ -2765,4 +2850,4 @@
     boot();
   }
 })();
-        </script>
+          </script>
