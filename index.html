@@ -1774,26 +1774,22 @@ Third-party libraries remain subject to their own licenses.
       "Suddenly, thump! thump! down she came upon a heap of sticks and dry leaves, and the fall was over. Alice was not a bit hurt, and she jumped up in a moment: she looked up, but it was all dark overhead; before her was another long passage.",
       "Away went Alice like the wind, and was just in time to hear the Rabbit say, as it turned a corner, \u2018Oh my ears and whiskers, how late it\u2019s getting!\u2019 She turned the corner and found herself in a long, low hall, lit up by a row of lamps."
     ];
-    // Do NOT build the Alice demo first when Gatefold already remembers a
-    // previously opened book. Building Alice and then immediately replacing it
-    // caused an unnecessary full pagination pass and the visible Alice-cover flash.
+    // Fast startup: if a previous book is remembered, initialize Turn.js with
+    // only a tiny one-page placeholder instead of paginating the Alice demo.
     var hasRememberedBookAtStartup = false;
     try{
       hasRememberedBookAtStartup = !!localStorage.getItem(LAST_BOOK_KEY);
     }catch(e){}
 
-    if(!hasRememberedBookAtStartup){
-      buildBookFromParagraphs(demoParagraphs, demoMeta.title, demoMeta.author, demoMeta.chapter);
+    if(hasRememberedBookAtStartup){
+      buildBookFromParagraphs(
+        ['Opening your saved book…'],
+        'Gatefold Reader',
+        '',
+        ''
+      );
     }else{
-      // Lightweight placeholder only; no Turn.js pagination and no demo-book work.
-      var startupFlip = document.getElementById('flipbook');
-      if(startupFlip){
-        startupFlip.innerHTML =
-          '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
-          'background:radial-gradient(160% 120% at 30% 0%,var(--cover-2),var(--cover-1) 65%);' +
-          'color:var(--gilt);font-family:var(--font-display);font-style:italic;font-size:18px;' +
-          'letter-spacing:.03em;text-align:center;">Opening your book…</div>';
-      }
+      buildBookFromParagraphs(demoParagraphs, demoMeta.title, demoMeta.author, demoMeta.chapter);
     }
 
     // ---------- file loading ----------
@@ -3280,45 +3276,14 @@ Third-party libraries remain subject to their own licenses.
     // allowing the gesture to begin safely away from Android's extreme edge.
 
     // Start in the saved reading mode and reopen the last book.
-    // IMPORTANT: when a remembered book exists, do not initialize/paginate Alice
-    // and do not call applyDisplay() against an empty Turn.js instance first.
-    // Establish the fullscreen geometry, restore the stored book, and let that
-    // ONE build create Turn.js and restore the saved reading position.
     applyFontScale();
     var initialVp = getViewportSize();
     lastStableViewport = {w:initialVp.w,h:initialVp.h};
 
     setTimeout(function(){
+      applyReadingMode();
       if(hasRememberedBookAtStartup){
-        document.body.classList.toggle('gf-reading-full', readingMode);
-        computeResponsiveSizes();
-
-        if(readingMode){
-          var vp = getViewportSize();
-          if(folded){
-            FOLDED_W = vp.w;
-            FOLDED_H = vp.h;
-          }else{
-            UNFOLDED_W = vp.w;
-            UNFOLDED_H = vp.h;
-          }
-        }
-
-        restoreLastBook().then(function(restored){
-          if(!restored){
-            // Stored-book record is missing/corrupt: fall back to Alice exactly
-            // as a first-run install would.
-            hasRememberedBookAtStartup = false;
-            buildBookFromParagraphs(
-              demoParagraphs,
-              demoMeta.title,
-              demoMeta.author,
-              demoMeta.chapter
-            );
-          }
-        });
-      }else{
-        applyReadingMode();
+        restoreLastBook();
       }
     }, 40);
 
@@ -3352,4 +3317,4 @@ Third-party libraries remain subject to their own licenses.
     boot();
   }
 })();
-  </script>
+</script>
