@@ -490,19 +490,6 @@ Third-party libraries remain subject to their own licenses.
     display:none!important;
   }
 
-  /* V61 TEMPORARY UNFOLDED FLOOR DIAGNOSTICS */
-  #gf-v61-diagnostic{
-    position:fixed;left:8px;bottom:8px;z-index:2147482500;
-    max-width:min(92vw,520px);padding:7px 9px;border-radius:6px;
-    background:rgba(0,0,0,.82);color:#fff;font:11px/1.35 monospace;
-    white-space:pre-wrap;pointer-events:none;
-  }
-  #gf-screen.gf-unfolded .sheet--text.gf-v61-probed{ position:relative!important; }
-  #gf-screen.gf-unfolded .sheet--text.gf-v61-probed::before{
-    content:"";position:absolute;left:0;right:0;
-    top:var(--gf-v61-floor-y,0px);height:2px;
-    background:#d00000;z-index:50;pointer-events:none;
-  }
 </style>
 <script>
 
@@ -1623,7 +1610,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V61 visible unfolded physical-floor diagnostics';
+      window.__gfDebug.paginationModel = 'V62 direct unfolded physical folio floor';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1803,30 +1790,74 @@ Third-party libraries remain subject to their own licenses.
         if(paraEl && paraEl.lastElementChild){
           lastTextBottom = paraEl.lastElementChild.getBoundingClientRect().bottom;
         }
-        // V56: both cover-screen and unfolded leaves stop one rendered line
-        // above the ACTUAL measured folio position. Unfolded hidden leaves now
-        // also use the same 5% bottom padding as the visible leaf.
+        // Folded/cover-screen retains the proven V53 rule.
         var folioClearancePx = linePx * 1.0;
         var clearsFolio = !folioEl || !lastTextBottom ||
           lastTextBottom <= (folioTop - folioClearancePx + 1);
 
-        // V57 UNFOLDED TRUE PHYSICAL AUTHORITY
+        // V62 DIRECT PHYSICAL FOLIO FLOOR
         //
-        // In unfolded mode, .para.clientHeight was still acting as a second,
-        // shorter invisible floor even when the ACTUAL rendered text was well
-        // above the folio. The visible recording proved that this veto could
-        // stop a page several lines early.
+        // The V61 on-screen diagnostic proved the visible unfolded leaf had:
+        //   sheetH 704, folioTop 669, desired floor 649, last text 558.
+        // In other words the page was being closed ~4.6 rendered lines early.
         //
-        // For unfolded leaves, the browser's physical relationship between the
-        // last rendered text line and the real folio is now the final authority.
-        // Folded/cover-screen mode retains V53's existing proven fit rule.
+        // Do not let hidden flex-flow decide the unfolded floor anymore.
+        // The folio is bottom-anchored by the real sheet geometry:
+        //
+        //   physical folio top =
+        //     page height - actual bottom padding - folio's rendered height
+        //
+        // and the text floor is exactly one rendered body line above that.
+        //
+        // This reproduces the ACTUAL visible folio coordinate directly and
+        // cannot be shortened by .para.clientHeight, hidden flex allocation,
+        // or a moved hidden folio.
+        var physicalFloorY = 0;
+        var lastTextBottomY = 0;
+        var clearsPhysicalFloor = true;
+
+        if(!folded && paraEl && paraEl.lastElementChild){
+          var testRect = testEl.getBoundingClientRect();
+          var folioRect = folioEl ? folioEl.getBoundingClientRect() : null;
+          var folioHeight = folioRect ? folioRect.height : 0;
+          if(!(folioHeight > 0)) folioHeight = 12;
+
+          var visibleBottomPaddingPx = pageW * 0.05;
+          physicalFloorY =
+            pageH -
+            visibleBottomPaddingPx -
+            folioHeight -
+            linePx;
+
+          lastTextBottomY =
+            paraEl.lastElementChild.getBoundingClientRect().bottom -
+            testRect.top;
+
+          clearsPhysicalFloor =
+            lastTextBottomY <= (physicalFloorY + 1);
+        }
+
         var fits = folded
           ? (!!paraEl && used <= available + 1 && clearsFolio)
-          : (!!paraEl && clearsFolio);
+          : (!!paraEl && clearsPhysicalFloor);
+
+        window.__gfDebug = window.__gfDebug || {};
+        if(!folded){
+          window.__gfDebug.v62PhysicalFloorY = physicalFloorY;
+          window.__gfDebug.v62LastTextBottomY = lastTextBottomY;
+          window.__gfDebug.v62PhysicalGapPx = physicalFloorY - lastTextBottomY;
+        }
 
         testEl.remove();
 
-        return { fits:fits, used:used, available:available, clearsFolio:clearsFolio };
+        return {
+          fits:fits,
+          used:used,
+          available:available,
+          clearsFolio:folded ? clearsFolio : clearsPhysicalFloor,
+          physicalFloorY:physicalFloorY,
+          lastTextBottomY:lastTextBottomY
+        };
       }
 
       function realFitCheck(existingHtml, candidateHtml){
@@ -2596,7 +2627,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v61-visible-floor-diagnostics',
+        'v62-direct-physical-folio-floor',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3329,76 +3360,6 @@ Third-party libraries remain subject to their own licenses.
             gfLiveLeafRebuildInFlight = false;
           }
         }, 140);
-      }
-
-      // V61 TEMPORARY VISIBLE FLOOR DIAGNOSTIC
-      // Red line = one rendered line above the ACTUAL visible folio.
-      // Overlay reports visible geometry beside the paginator's current model.
-      if(!folded){
-        setTimeout(function(){
-          try{
-            var oldDiag = document.getElementById('gf-v61-diagnostic');
-            if(oldDiag) oldDiag.remove();
-
-            var sheets = flipEl.find('.turn-page:visible .sheet--text');
-            if(!sheets.length) sheets = flipEl.find('.sheet--text');
-
-            var rows = [];
-            sheets.each(function(index){
-              if(index > 1) return;
-              var sheet = this;
-              var para = sheet.querySelector('.para');
-              var folio = sheet.querySelector('.folio');
-              if(!para || !folio) return;
-
-              var sr = sheet.getBoundingClientRect();
-              var pr = para.getBoundingClientRect();
-              var fr = folio.getBoundingClientRect();
-              var last = para.lastElementChild;
-              var lr = last ? last.getBoundingClientRect() : null;
-              var pcs = getComputedStyle(para);
-              var lp = parseFloat(pcs.lineHeight);
-              if(!isFinite(lp) || lp <= 0){
-                lp = (parseFloat(pcs.fontSize) || 13) * 1.6;
-              }
-
-              var folioTop = fr.top - sr.top;
-              var floorY = folioTop - lp;
-              var lastBottom = lr ? (lr.bottom - sr.top) : 0;
-              var gapLines = lp ? (floorY - lastBottom) / lp : 0;
-
-              sheet.classList.add('gf-v61-probed');
-              sheet.style.setProperty('--gf-v61-floor-y', Math.round(floorY) + 'px');
-
-              rows.push(
-                'leaf '+(index+1)+
-                ' sheetH='+Math.round(sr.height)+
-                ' paraTop='+Math.round(pr.top-sr.top)+
-                ' folioTop='+Math.round(folioTop)+
-                ' floor='+Math.round(floorY)+
-                ' last='+Math.round(lastBottom)+
-                ' gap='+gapLines.toFixed(2)+' lines'
-              );
-            });
-
-            var dbg = window.__gfDebug || {};
-            rows.push(
-              'model page='+Math.round(dbg.pageW||0)+'x'+Math.round(dbg.pageH||0)+
-              ' usableH='+Math.round(dbg.usableH||0)+
-              ' line='+Number(dbg.linePx||0).toFixed(1)
-            );
-            rows.push(
-              'live sheet='+Math.round(dbg.v58LiveSheetW||0)+'x'+Math.round(dbg.v58LiveSheetH||0)+
-              ' liveParaTop='+Math.round(dbg.v58LiveParaTop||0)+
-              ' liveFolioTop='+Math.round(dbg.v58LiveFolioTop||0)
-            );
-
-            var panel = document.createElement('div');
-            panel.id = 'gf-v61-diagnostic';
-            panel.textContent = rows.join('\n');
-            document.body.appendChild(panel);
-          }catch(_v61DiagErr){}
-        }, 320);
       }
 
       bookTitle = title;
@@ -6344,4 +6305,4 @@ Third-party libraries remain subject to their own licenses.
   }
 })();
 
-</script>
+  </script>
