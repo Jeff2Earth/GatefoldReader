@@ -607,7 +607,10 @@ Third-party libraries remain subject to their own licenses.
     //   fold   = force single-page
     //   unfold = force two-page spread
     //   auto   = choose from the physical screen shape
-    var foldMode = 'fold';
+    //
+    // V72: Fresh install / cleared browser data defaults to Auto.
+    // A previously saved user choice still overrides this normally.
+    var foldMode = 'auto';
 
     function autoFoldedForViewport(vp){
       vp = vp || {w:window.innerWidth||1,h:window.innerHeight||1};
@@ -874,7 +877,7 @@ Third-party libraries remain subject to their own licenses.
     var gfLiveLeafRebuildInFlight = false;
     var gfV63PageCloseReasons = [];
     var gfV65PaginatorOrigin = 'UNKNOWN';
-    var gfV65BuildMarker = 'V71';
+    var gfV65BuildMarker = 'V72';
     // V64: authoritative unfolded body-text capacity learned from the visible leaf.
     // This is the vertical distance from .para top to exactly one rendered line
     // above the ACTUAL visible folio.
@@ -1361,7 +1364,7 @@ Third-party libraries remain subject to their own licenses.
       pages = pages.filter(hasText);
 
       window.__gfDebug = window.__gfDebug || {};
-      window.__gfDebug.v65Build = 'V71';
+      window.__gfDebug.v65Build = 'V72';
       window.__gfDebug.v65PaginatorOrigin = gfV65PaginatorOrigin;
       window.__gfDebug.hardPhysicalFit = 'V45 rendered-page overflow correction + pull-forward';
       window.__gfDebug.hardPhysicalFitGuard = guard;
@@ -1717,7 +1720,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V71 direct DOM leaf capture';
+      window.__gfDebug.paginationModel = 'V72 Auto default + V71 direct DOM leaf capture';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2374,7 +2377,7 @@ Third-party libraries remain subject to their own licenses.
           if(takeWords <= 0){
             if(pageParts.length){
               flushPage(
-                'V71 NO WORD FIT — candidate rejected | p=' + p +
+                'V72 NO WORD FIT — candidate rejected | p=' + p +
                 ' | remaining=' + remaining.length +
                 ' | usedH=' + Math.round(usedH) +
                 ' | usableH=' + Math.round(usableH) +
@@ -2500,7 +2503,7 @@ Third-party libraries remain subject to their own licenses.
           ? gfV63PageCloseReasons[folioNum-1]
           : 'NO CLOSE REASON RECORDED';
         v63Tag = '<div class="gf-v63-close-tag">'+
-          'V71 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
+          'V72 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
           ' · P'+folioNum+' · '+escapeHtml(_reason)+'</div>';
       }
       return '<div class="tpage'+sideClass+'"><div class="sheet sheet--text"><div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
@@ -2813,7 +2816,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v71-direct-dom-leaf-capture',
+        'v72-auto-default',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3778,7 +3781,7 @@ function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride
         if(!folded){
           var _v65 = document.createElement('div');
           _v65.id = 'gf-v65-marker';
-          _v65.textContent = 'V71 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
+          _v65.textContent = 'V72 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
           document.body.appendChild(_v65);
         }
       }catch(_v65MarkerErr){}
