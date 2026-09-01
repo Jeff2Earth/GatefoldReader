@@ -288,18 +288,18 @@ Third-party libraries remain subject to their own licenses.
   .gf-root .para p:last-child { margin-bottom: 0; }
   .gf-root .para .dropcap { float:left; font-family:var(--font-display); font-size:2.7em; line-height:.82; padding:.04em .07em 0 0; color:var(--burgundy); }
   .gf-root .folio { font-family: var(--font-ui); font-size: 10px; color: var(--ink-soft); text-align:center; margin-top: 4%; flex-shrink:0; letter-spacing:.04em; }
-  .gf-root .sheet--cover { background: radial-gradient(160% 120% at 30% 0%, var(--cover-2), var(--cover-1) 65%); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding: 12%; box-shadow: inset 0 0 40px rgba(0,0,0,.35); }
-  .gf-root .cover-rule { width:34%; height:1px; background:linear-gradient(90deg,transparent,var(--gilt),transparent); margin:14px 0; }
-  .gf-root .cover-title { font-family: var(--font-display); font-style:italic; color:var(--gilt); font-size: 19px; line-height:1.28; }
-  .gf-root .cover-author { font-family: var(--font-ui); color:#cfc9b6; font-size:10px; letter-spacing:.16em; text-transform:uppercase; margin-top:6px; }
-  .gf-root .cover-chapter { font-family: var(--font-ui); color: var(--gilt-dim); font-size:9px; letter-spacing:.14em; text-transform:uppercase; margin-top:16px; }
+  .gf-root .sheet--cover { background: radial-gradient(160% 120% at 30% 0%, var(--cover-2), var(--cover-1) 65%); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:clamp(14px,8%,12%); box-shadow: inset 0 0 40px rgba(0,0,0,.35); overflow:hidden; min-height:0; }
+  .gf-root .cover-rule { width:34%; height:1px; background:linear-gradient(90deg,transparent,var(--gilt),transparent); margin:clamp(6px,2.8vh,14px) 0; flex:0 0 auto; }
+  .gf-root .cover-title { font-family: var(--font-display); font-style:italic; color:var(--gilt); font-size:clamp(13px,4.4vw,19px); line-height:1.18; max-width:100%; overflow-wrap:anywhere; }
+  .gf-root .cover-author { font-family: var(--font-ui); color:#cfc9b6; font-size:clamp(8px,2.3vw,10px); letter-spacing:.12em; text-transform:uppercase; margin-top:clamp(3px,1.2vh,6px); max-width:100%; overflow-wrap:anywhere; }
+  .gf-root .cover-chapter { font-family: var(--font-ui); color: var(--gilt-dim); font-size:clamp(7px,2.1vw,9px); letter-spacing:.10em; text-transform:uppercase; margin-top:clamp(6px,2.4vh,16px); max-width:100%; overflow-wrap:anywhere; }
   .gf-root .sheet--close { background: var(--parchment); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:12%; }
   .gf-root .sheet--close .close-title { font-family:var(--font-display); font-style:italic; color:var(--ink); font-size:15px; }
   .gf-root .sheet--close .close-sub { font-family:var(--font-ui); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft); margin-top:10px; }
 
   /* EPUB artwork */
   .gf-root .cover-art{
-    display:block;max-width:82%;max-height:58%;object-fit:contain;
+    display:block;max-width:82%;max-height:min(58%,52dvh);object-fit:contain;
     margin:0 auto 16px;border-radius:2px;
     box-shadow:0 8px 24px rgba(0,0,0,.28);
   }
@@ -898,6 +898,14 @@ Third-party libraries remain subject to their own licenses.
       };
     }
 
+    // V52 MARGIN GEOMETRY
+    // Hidden pagination probes must use the same outer horizontal margin
+    // selected by the reader. The binding-side edge remains the existing 5%.
+    function gfSelectedOuterMarginRatio(){
+      var v = (pageMarginsSelect && pageMarginsSelect.value) || 'normal';
+      return v === 'narrow' ? 0.045 : (v === 'wide' ? 0.10 : 0.07);
+    }
+
     function clearPaginationGeometry(){
       gfPaginationPageW = 0;
       gfPaginationPageH = 0;
@@ -927,7 +935,7 @@ Third-party libraries remain subject to their own licenses.
       // containing-block width.
       measureEl.style.paddingTop = (pageW * 0.05) + 'px';
       measureEl.style.paddingBottom = (pageW * (folded ? 0.07 : 0.05)) + 'px';
-      measureEl.style.paddingLeft = (pageW * 0.07) + 'px';
+      measureEl.style.paddingLeft = (pageW * gfSelectedOuterMarginRatio()) + 'px';
       measureEl.style.paddingRight = (pageW * 0.05) + 'px';
       document.querySelector('.gf-root').appendChild(measureEl);
       return measureEl;
@@ -1372,7 +1380,7 @@ Third-party libraries remain subject to their own licenses.
         // exactly matches a Turn.js page.
         calEl.style.paddingTop = (pageW * 0.05) + 'px';
         calEl.style.paddingBottom = (pageW * (folded ? 0.07 : 0.05)) + 'px';
-        calEl.style.paddingLeft = (pageW * 0.07) + 'px';
+        calEl.style.paddingLeft = (pageW * gfSelectedOuterMarginRatio()) + 'px';
         calEl.style.paddingRight = (pageW * 0.05) + 'px';
         calEl.innerHTML =
           '<div class="running-head"'+(!folded ? ' style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"' : '')+'>'+escapeHtml(calLabel)+'</div>' +
@@ -1388,7 +1396,7 @@ Third-party libraries remain subject to their own licenses.
 
       if(!usableW || !usableH){
         // Fallback only if real measurement failed for some reason.
-        usableW = pageW * (1 - 0.07 - 0.07);
+        usableW = pageW * (1 - gfSelectedOuterMarginRatio() - 0.05);
         usableH = pageH - pageW*0.09 - pageW*(folded ? 0.07 : 0.05) - 20 - 11 - pageW*0.07 - pageW*(folded ? 0.04 : 0.015);
       }
 
@@ -1414,7 +1422,7 @@ Third-party libraries remain subject to their own licenses.
           probeWrap.style.pointerEvents = 'none';
           probeWrap.style.paddingTop = (pageW * 0.05) + 'px';
           probeWrap.style.paddingBottom = (pageW * (folded ? 0.07 : 0.05)) + 'px';
-          probeWrap.style.paddingLeft = (pageW * 0.07) + 'px';
+          probeWrap.style.paddingLeft = (pageW * gfSelectedOuterMarginRatio()) + 'px';
           probeWrap.style.paddingRight = (pageW * 0.05) + 'px';
 
           var probe = document.createElement('div');
@@ -1503,7 +1511,7 @@ Third-party libraries remain subject to their own licenses.
               sampleEl.style.pointerEvents = 'none';
               sampleEl.style.paddingTop = (pageW * 0.05) + 'px';
               sampleEl.style.paddingBottom = (pageW * (folded ? 0.07 : 0.05)) + 'px';
-              sampleEl.style.paddingLeft = (pageW * 0.07) + 'px';
+              sampleEl.style.paddingLeft = (pageW * gfSelectedOuterMarginRatio()) + 'px';
               sampleEl.style.paddingRight = (pageW * 0.05) + 'px';
               sampleEl.innerHTML =
                 '<div class="running-head" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">A</div>' +
@@ -1585,7 +1593,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V51 unified floor + near-folio physical Bible guard';
+      window.__gfDebug.paginationModel = 'V52 unified floor + folded live-leaf/folio guard';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1725,7 +1733,7 @@ Third-party libraries remain subject to their own licenses.
         // full-width .gf-root containing block.
         testEl.style.paddingTop = (pageW * 0.05) + 'px';
         testEl.style.paddingBottom = (pageW * (folded ? 0.07 : 0.05)) + 'px';
-        testEl.style.paddingLeft = (pageW * 0.07) + 'px';
+        testEl.style.paddingLeft = (pageW * gfSelectedOuterMarginRatio()) + 'px';
         testEl.style.paddingRight = (pageW * 0.05) + 'px';
         testEl.innerHTML =
           '<div class="running-head"'+(!folded ? ' style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"' : '')+'>'+escapeHtml(calLabel)+'</div>' +
@@ -1761,7 +1769,7 @@ Third-party libraries remain subject to their own licenses.
         if(paraEl && paraEl.lastElementChild){
           lastTextBottom = paraEl.lastElementChild.getBoundingClientRect().bottom;
         }
-        var folioClearancePx = folded ? 0 : (linePx * 0.15);
+        var folioClearancePx = linePx * 0.15;
         var clearsFolio = !folioEl || !lastTextBottom ||
           lastTextBottom <= (folioTop - folioClearancePx + 1);
 
@@ -2010,7 +2018,6 @@ Third-party libraries remain subject to their own licenses.
           // visible line/verse from slipping behind the page number.
           if(usedH + paragraphHeight <= usableH){
             var nearBibleFolio = !!(
-              !folded &&
               typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length &&
               (usableH - (usedH + paragraphHeight)) <= (linePx * 3.0)
             );
@@ -2515,7 +2522,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v51-folio-guard',
+        'v52-folded-actual-leaf',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3130,14 +3137,14 @@ Third-party libraries remain subject to their own licenses.
         }
       });
 
-      // V25 LIVE LEAF GEOMETRY CALIBRATION
-      // In unfolded mode, use the ACTUAL on-screen Turn.js leaf rectangle as
-      // the pagination authority instead of estimated/remembered open geometry.
+      // V52 LIVE LEAF GEOMETRY CALIBRATION
+      // Both folded and unfolded modes use the ACTUAL on-screen Turn.js leaf
+      // rectangle as pagination authority. This is especially important on
+      // cover screens, where browser chrome/aspect ratio can make remembered
+      // or estimated height differ from the physical visible page.
       //
-      // This is intentionally a one-correction experiment: if the visible leaf
-      // differs from the geometry used to paginate, rebuild once against the
-      // visible rectangle and preserve reading position.
-      if(!folded){
+      // Rebuild at most once against the live rectangle and preserve position.
+      {
         setTimeout(function(){
           try{
             if(gfLiveLeafRebuildInFlight) return;
@@ -3152,9 +3159,10 @@ Third-party libraries remain subject to their own licenses.
             var liveH = Math.round(liveRect.height || 0);
             if(liveW < 100 || liveH < 150) return;
 
-            // Reject a two-page wrapper accidentally selected as one leaf.
+            // Reject an accidental spread wrapper in unfolded mode. A folded
+            // leaf is expected to occupy nearly the full viewport width.
             var vp = getViewportSize();
-            if(liveW > vp.w * 0.72 || liveH > vp.h * 1.08) return;
+            if((!folded && liveW > vp.w * 0.72) || liveW > vp.w * 1.08 || liveH > vp.h * 1.08) return;
 
             var pgNow = paginationPageSize();
             var mismatch = Math.abs(liveW - pgNow.w) > 3 ||
@@ -6144,4 +6152,4 @@ Third-party libraries remain subject to their own licenses.
   }
 })();
 
-  </script>
+</script>
