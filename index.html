@@ -1585,7 +1585,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V50 unified physical floor: browser para height + 0.15-line folio clearance';
+      window.__gfDebug.paginationModel = 'V51 unified floor + near-folio physical Bible guard';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2001,11 +2001,49 @@ Third-party libraries remain subject to their own licenses.
           var paragraphHeight = lines.length * linePx + paraGapPx;
 
           // Whole verse/paragraph fits in the remaining page area.
+          //
+          // V51 FOLIO GUARD:
+          // Canvas remains the fast authority through most of the page. Only
+          // when Bible text enters the final ~3 rendered lines do we ask the
+          // browser for an exact physical fit against the REAL folio position.
+          // This avoids a permanent bottom buffer while preventing the final
+          // visible line/verse from slipping behind the page number.
           if(usedH + paragraphHeight <= usableH){
-            pageParts.push({text:remaining.join(' '), paraId:p, cont:paragraphContinuation});
-            usedH += paragraphHeight;
-            remaining = [];
-            continue;
+            var nearBibleFolio = !!(
+              !folded &&
+              typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length &&
+              (usableH - (usedH + paragraphHeight)) <= (linePx * 3.0)
+            );
+
+            var acceptedNearMeasure = null;
+            var browserAcceptsNear = true;
+            if(nearBibleFolio){
+              try{
+                var nearCandidate = candidateHtmlForRemaining(remaining, p, paragraphContinuation);
+                acceptedNearMeasure = realFitMeasure(nearCandidate.html, '');
+                browserAcceptsNear = !!(acceptedNearMeasure && acceptedNearMeasure.fits);
+              }catch(_v51NearErr){
+                browserAcceptsNear = false;
+              }
+            }
+
+            if(!nearBibleFolio || browserAcceptsNear){
+              pageParts.push({text:remaining.join(' '), paraId:p, cont:paragraphContinuation});
+
+              // Near the folio, carry forward the browser's actual used height
+              // so the next verse starts from physical reality, not accumulated
+              // Canvas rounding. Away from the floor, keep the fast estimate.
+              if(nearBibleFolio && acceptedNearMeasure && isFinite(acceptedNearMeasure.used)){
+                usedH = acceptedNearMeasure.used;
+              }else{
+                usedH += paragraphHeight;
+              }
+
+              remaining = [];
+              continue;
+            }
+            // Browser says the estimate would cross the physical floor. Fall
+            // through to the existing DOM-verified binary splitter below.
           }
 
           // The fast estimate says this verse does not fit. Before accepting
@@ -2477,7 +2515,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v50-unified-physical-floor',
+        'v51-folio-guard',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
