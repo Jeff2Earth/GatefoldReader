@@ -874,17 +874,15 @@ Third-party libraries remain subject to their own licenses.
     var gfLiveLeafRebuildInFlight = false;
     var gfV63PageCloseReasons = [];
     var gfV65PaginatorOrigin = 'UNKNOWN';
-    var gfV65BuildMarker = 'V67';
-    // V67: hidden paginator height can be systematically taller than the
-    // actual visible text block. Store the finalized hidden used-height for
-    // each page, then calibrate that bias against the rendered leaf.
-    var gfV67PageHiddenUsed = [];
-    var gfV67HeightBiasPx = 0;
-    var gfV67BiasRebuildDone = false;
+    var gfV65BuildMarker = 'V68';
     // V64: authoritative unfolded body-text capacity learned from the visible leaf.
     // This is the vertical distance from .para top to exactly one rendered line
     // above the ACTUAL visible folio.
     var gfUnfoldedPhysicalTextCapacity = 0;
+    // V68: preserve the pre-pagination physical capacity. The live flex folio
+    // can move upward as text grows, so a later live reading must never shrink
+    // the floor below this bootstrap value.
+    var gfV68BootstrapTextCapacity = 0;
     var gfV64CapacityRebuildDone = false;
 
     // V22 REMEMBERED LIVE GEOMETRY
@@ -1354,7 +1352,7 @@ Third-party libraries remain subject to their own licenses.
       pages = pages.filter(hasText);
 
       window.__gfDebug = window.__gfDebug || {};
-      window.__gfDebug.v65Build = 'V66';
+      window.__gfDebug.v65Build = 'V68';
       window.__gfDebug.v65PaginatorOrigin = gfV65PaginatorOrigin;
       window.__gfDebug.hardPhysicalFit = 'V45 rendered-page overflow correction + pull-forward';
       window.__gfDebug.hardPhysicalFitGuard = guard;
@@ -1669,6 +1667,7 @@ Third-party libraries remain subject to their own licenses.
           var _v66Capacity = _v66PhysicalFloorY - _v66ParaTop;
 
           if(_v66Capacity > 100){
+            gfV68BootstrapTextCapacity = _v66Capacity;
             gfUnfoldedPhysicalTextCapacity = _v66Capacity;
           }
 
@@ -1709,7 +1708,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V67 visible-height bias calibration';
+      window.__gfDebug.paginationModel = 'V68 frozen bootstrap physical floor';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1746,7 +1745,6 @@ Third-party libraries remain subject to their own licenses.
 
       var pages = [];
       var pageCloseReasons = [];
-      var pageHiddenUsed = [];
       var pageParts = [];
       var usedH = 0;
       var firstPage = true;
@@ -1824,7 +1822,6 @@ Third-party libraries remain subject to their own licenses.
 
         pages.push(out);
         pageCloseReasons.push(String(reason || 'UNLABELED FLUSH'));
-        pageHiddenUsed.push(Number(usedH) || 0);
         pageParts = [];
         usedH = 0;
         firstPage = false;
@@ -2197,15 +2194,10 @@ Third-party libraries remain subject to their own licenses.
             if(measured && isFinite(measured.used) &&
                gfUnfoldedPhysicalTextCapacity > 0){
               window.__gfDebug = window.__gfDebug || {};
-              var _v67EffectiveCapacity =
-                gfUnfoldedPhysicalTextCapacity + Math.max(0, gfV67HeightBiasPx || 0);
-
               window.__gfDebug.v66CandidateUsed = measured.used;
               window.__gfDebug.v66PhysicalTextCapacity = gfUnfoldedPhysicalTextCapacity;
-              window.__gfDebug.v67HeightBiasPx = gfV67HeightBiasPx || 0;
-              window.__gfDebug.v67EffectiveCapacity = _v67EffectiveCapacity;
               window.__gfDebug.v66CandidateDecision =
-                measured.used <= (_v67EffectiveCapacity + 1);
+                measured.used <= (gfUnfoldedPhysicalTextCapacity + 1);
               return window.__gfDebug.v66CandidateDecision;
             }
           }catch(_v66CandidateErr){}
@@ -2364,16 +2356,12 @@ Third-party libraries remain subject to their own licenses.
           if(takeWords <= 0){
             if(pageParts.length){
               flushPage(
-                'V67 NO WORD FIT — candidate rejected | p=' + p +
+                'V68 NO WORD FIT — candidate rejected | p=' + p +
                 ' | remaining=' + remaining.length +
                 ' | usedH=' + Math.round(usedH) +
                 ' | usableH=' + Math.round(usableH) +
-                ' | liveCap=' + Math.round(gfUnfoldedPhysicalTextCapacity || 0) +
-                ' | bias=' + Math.round(gfV67HeightBiasPx || 0) +
-                ' | effCap=' + Math.round(
-                    (gfUnfoldedPhysicalTextCapacity || 0) +
-                    Math.max(0, gfV67HeightBiasPx || 0)
-                  )
+                ' | bootCap=' + Math.round(gfV68BootstrapTextCapacity || 0) +
+                ' | liveCap=' + Math.round(gfUnfoldedPhysicalTextCapacity || 0)
               );
               continue;
             }
@@ -2437,10 +2425,8 @@ Third-party libraries remain subject to their own licenses.
       // aligned one-to-one with the finished Bible pageBlocks. Ordinary books
       // may be repacked later; tracer is intended for the Bible debugging path.
       gfV63PageCloseReasons = pageCloseReasons.slice();
-      gfV67PageHiddenUsed = pageHiddenUsed.slice();
       window.__gfDebug = window.__gfDebug || {};
       window.__gfDebug.v63PageCloseReasons = gfV63PageCloseReasons.slice();
-      window.__gfDebug.v67PageHiddenUsed = gfV67PageHiddenUsed.slice();
 
       // Existing continuation-aware pack remains useful for speed/structure.
       pages = finalPackPages(pages);
@@ -2493,7 +2479,7 @@ Third-party libraries remain subject to their own licenses.
           ? gfV63PageCloseReasons[folioNum-1]
           : 'NO CLOSE REASON RECORDED';
         v63Tag = '<div class="gf-v63-close-tag">'+
-          'V67 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
+          'V68 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
           ' · P'+folioNum+' · '+escapeHtml(_reason)+'</div>';
       }
       return '<div class="tpage'+sideClass+'"><div class="sheet sheet--text"><div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
@@ -2806,7 +2792,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v67-visible-height-bias-calibration',
+        'v68-frozen-bootstrap-floor',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3508,59 +3494,33 @@ Third-party libraries remain subject to their own licenses.
                   if(!folded){
                     var _capacity = _folioTop - _line - _paraTop;
                     if(_capacity > 100){
+                      // V68 FROZEN PHYSICAL FLOOR
+                      //
+                      // V66 proved the FAST candidate branch is now active.
+                      // The remaining short floor came from this live refinement:
+                      // .folio participates in the sheet's flex flow, so its
+                      // measured top can move UP as page text grows. Replacing
+                      // the bootstrap capacity with that smaller moving value
+                      // creates a self-tightening floor.
+                      //
+                      // Never allow the live flex measurement to reduce the
+                      // synchronous pre-pagination physical capacity. It may
+                      // only confirm it or increase it.
+                      var _authoritativeCapacity = Math.max(
+                        gfV68BootstrapTextCapacity || 0,
+                        gfUnfoldedPhysicalTextCapacity || 0,
+                        _capacity
+                      );
+
                       v64CapacityChanged =
                         !(gfUnfoldedPhysicalTextCapacity > 0) ||
-                        Math.abs(gfUnfoldedPhysicalTextCapacity - _capacity) > 2;
+                        Math.abs(gfUnfoldedPhysicalTextCapacity - _authoritativeCapacity) > 2;
 
-                      gfUnfoldedPhysicalTextCapacity = _capacity;
-                      window.__gfDebug.v64PhysicalTextCapacity = _capacity;
+                      gfUnfoldedPhysicalTextCapacity = _authoritativeCapacity;
+                      window.__gfDebug.v68BootstrapCapacity = gfV68BootstrapTextCapacity;
+                      window.__gfDebug.v68LiveFlexCapacity = _capacity;
+                      window.__gfDebug.v64PhysicalTextCapacity = _authoritativeCapacity;
                       window.__gfDebug.v64VisibleLinePx = _line;
-
-                      // V67 VISIBLE-HEIGHT BIAS CALIBRATION
-                      //
-                      // Compare the hidden paginator's finalized used-height for
-                      // THIS visible folio with the actual rendered text height.
-                      // If hidden measurement says, for example, 570px used while
-                      // the visible text physically occupies only 480px, that
-                      // ~90px difference is precisely the false early-stop bias.
-                      var _folioNum = parseInt(String(_folio.textContent || '').trim(), 10);
-                      var _lastVisible = _para.lastElementChild;
-                      var _visibleUsed = 0;
-
-                      if(_lastVisible){
-                        var _lastRect = _lastVisible.getBoundingClientRect();
-                        var _lastStyle = getComputedStyle(_lastVisible);
-                        var _lastMb = parseFloat(_lastStyle.marginBottom) || 0;
-                        _visibleUsed = Math.max(
-                          0,
-                          _lastRect.bottom - _pr.top + _lastMb
-                        );
-                      }
-
-                      var _hiddenUsed =
-                        (_folioNum > 0 && gfV67PageHiddenUsed[_folioNum - 1] > 0)
-                          ? gfV67PageHiddenUsed[_folioNum - 1]
-                          : 0;
-
-                      if(_hiddenUsed > 0 && _visibleUsed > 0){
-                        var _bias = _hiddenUsed - _visibleUsed;
-
-                        // Only compensate a genuine positive hidden-measurement
-                        // overstatement, and cap it to a sane number of body lines.
-                        var _maxBias = _line * 8;
-                        _bias = Math.max(0, Math.min(_maxBias, _bias));
-
-                        if(_bias > 2){
-                          gfV67HeightBiasPx = _bias;
-                        }
-
-                        window.__gfDebug.v67VisibleFolio = _folioNum;
-                        window.__gfDebug.v67VisibleUsed = _visibleUsed;
-                        window.__gfDebug.v67HiddenUsed = _hiddenUsed;
-                        window.__gfDebug.v67HeightBiasPx = gfV67HeightBiasPx;
-                        window.__gfDebug.v67EffectiveCapacity =
-                          gfUnfoldedPhysicalTextCapacity + gfV67HeightBiasPx;
-                      }
                     }
                   }
                 }
@@ -3577,16 +3537,9 @@ Third-party libraries remain subject to their own licenses.
               !gfV64CapacityRebuildDone &&
               gfUnfoldedPhysicalTextCapacity > 0;
 
-            var needsV67BiasRebuild =
-              !folded &&
-              !gfV67BiasRebuildDone &&
-              gfV67HeightBiasPx > 2 &&
-              gfUnfoldedPhysicalTextCapacity > 0;
-
-            if(mismatch || needsV64CapacityRebuild || needsV67BiasRebuild){
+            if(mismatch || needsV64CapacityRebuild){
               gfLiveLeafRebuildInFlight = true;
               if(needsV64CapacityRebuild) gfV64CapacityRebuildDone = true;
-              if(needsV67BiasRebuild) gfV67BiasRebuildDone = true;
               gfPaginationPageW = liveW;
               gfPaginationPageH = liveH;
 
@@ -3638,7 +3591,7 @@ Third-party libraries remain subject to their own licenses.
         if(!folded){
           var _v65 = document.createElement('div');
           _v65.id = 'gf-v65-marker';
-          _v65.textContent = 'V67 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
+          _v65.textContent = 'V68 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
           document.body.appendChild(_v65);
         }
       }catch(_v65MarkerErr){}
