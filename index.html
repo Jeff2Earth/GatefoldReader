@@ -1609,7 +1609,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V56 unfolded visible-geometry match + one-line folio floor';
+      window.__gfDebug.paginationModel = 'V57 unfolded direct folio authority + one-line physical floor';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1796,7 +1796,20 @@ Third-party libraries remain subject to their own licenses.
         var clearsFolio = !folioEl || !lastTextBottom ||
           lastTextBottom <= (folioTop - folioClearancePx + 1);
 
-        var fits = !!paraEl && used <= available + 1 && clearsFolio;
+        // V57 UNFOLDED TRUE PHYSICAL AUTHORITY
+        //
+        // In unfolded mode, .para.clientHeight was still acting as a second,
+        // shorter invisible floor even when the ACTUAL rendered text was well
+        // above the folio. The visible recording proved that this veto could
+        // stop a page several lines early.
+        //
+        // For unfolded leaves, the browser's physical relationship between the
+        // last rendered text line and the real folio is now the final authority.
+        // Folded/cover-screen mode retains V53's existing proven fit rule.
+        var fits = folded
+          ? (!!paraEl && used <= available + 1 && clearsFolio)
+          : (!!paraEl && clearsFolio);
+
         testEl.remove();
 
         return { fits:fits, used:used, available:available, clearsFolio:clearsFolio };
@@ -2549,7 +2562,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v56-unfolded-visible-geometry',
+        'v57-unfolded-folio-authority',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
