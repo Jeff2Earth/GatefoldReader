@@ -1311,10 +1311,10 @@ Third-party libraries remain subject to their own licenses.
       usableH *= folded ? 0.997 : 0.999;
 
       // V41 CLEAN FLOOR
-      // One and only one floor expansion: four physical text lines in unfolded mode.
+      // One and only one floor expansion: three and one-half physical text lines in unfolded mode.
       // Unlike V38/V40, we DO NOT also alter bottom padding, folio spacing,
       // the 0.15-line safety reserve, or the 0.999 unfolded multiplier.
-      var unfoldedBottomBoost = folded ? 0 : (linePx * 4.0);
+      var unfoldedBottomBoost = folded ? 0 : (linePx * 3.5);
       if(!folded){
         usableH += unfoldedBottomBoost;
       }
@@ -1331,7 +1331,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V41 clean +4-line unfolded floor + V36 coalesced paragraph pack';
+      window.__gfDebug.paginationModel = 'V43 safe +3.5-line unfolded floor + V36 coalesced paragraph pack';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
