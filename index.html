@@ -874,7 +874,7 @@ Third-party libraries remain subject to their own licenses.
     var gfLiveLeafRebuildInFlight = false;
     var gfV63PageCloseReasons = [];
     var gfV65PaginatorOrigin = 'UNKNOWN';
-    var gfV65BuildMarker = 'V68';
+    var gfV65BuildMarker = 'V69';
     // V64: authoritative unfolded body-text capacity learned from the visible leaf.
     // This is the vertical distance from .para top to exactly one rendered line
     // above the ACTUAL visible folio.
@@ -883,6 +883,10 @@ Third-party libraries remain subject to their own licenses.
     // can move upward as text grows, so a later live reading must never shrink
     // the floor below this bootstrap value.
     var gfV68BootstrapTextCapacity = 0;
+    // V69: true unfolded body-text capacity measured from the ACTUAL visible
+    // page coordinates: folioTop - one body line - paraTop.
+    var gfV69VisibleCoordinateCapacity = 0;
+    var gfV69CoordinateRebuildDone = false;
     var gfV64CapacityRebuildDone = false;
 
     // V22 REMEMBERED LIVE GEOMETRY
@@ -1352,7 +1356,7 @@ Third-party libraries remain subject to their own licenses.
       pages = pages.filter(hasText);
 
       window.__gfDebug = window.__gfDebug || {};
-      window.__gfDebug.v65Build = 'V68';
+      window.__gfDebug.v65Build = 'V69';
       window.__gfDebug.v65PaginatorOrigin = gfV65PaginatorOrigin;
       window.__gfDebug.hardPhysicalFit = 'V45 rendered-page overflow correction + pull-forward';
       window.__gfDebug.hardPhysicalFitGuard = guard;
@@ -1708,7 +1712,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V68 frozen bootstrap physical floor';
+      window.__gfDebug.paginationModel = 'V69 visible coordinate capacity';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2194,10 +2198,18 @@ Third-party libraries remain subject to their own licenses.
             if(measured && isFinite(measured.used) &&
                gfUnfoldedPhysicalTextCapacity > 0){
               window.__gfDebug = window.__gfDebug || {};
+              var _v69Capacity =
+                gfV69VisibleCoordinateCapacity > 0
+                  ? gfV69VisibleCoordinateCapacity
+                  : gfUnfoldedPhysicalTextCapacity;
+
               window.__gfDebug.v66CandidateUsed = measured.used;
               window.__gfDebug.v66PhysicalTextCapacity = gfUnfoldedPhysicalTextCapacity;
+              window.__gfDebug.v69VisibleCoordinateCapacity =
+                gfV69VisibleCoordinateCapacity;
+              window.__gfDebug.v69CandidateCapacity = _v69Capacity;
               window.__gfDebug.v66CandidateDecision =
-                measured.used <= (gfUnfoldedPhysicalTextCapacity + 1);
+                measured.used <= (_v69Capacity + 1);
               return window.__gfDebug.v66CandidateDecision;
             }
           }catch(_v66CandidateErr){}
@@ -2356,11 +2368,12 @@ Third-party libraries remain subject to their own licenses.
           if(takeWords <= 0){
             if(pageParts.length){
               flushPage(
-                'V68 NO WORD FIT — candidate rejected | p=' + p +
+                'V69 NO WORD FIT — candidate rejected | p=' + p +
                 ' | remaining=' + remaining.length +
                 ' | usedH=' + Math.round(usedH) +
                 ' | usableH=' + Math.round(usableH) +
                 ' | bootCap=' + Math.round(gfV68BootstrapTextCapacity || 0) +
+                ' | coordCap=' + Math.round(gfV69VisibleCoordinateCapacity || 0) +
                 ' | liveCap=' + Math.round(gfUnfoldedPhysicalTextCapacity || 0)
               );
               continue;
@@ -2479,7 +2492,7 @@ Third-party libraries remain subject to their own licenses.
           ? gfV63PageCloseReasons[folioNum-1]
           : 'NO CLOSE REASON RECORDED';
         v63Tag = '<div class="gf-v63-close-tag">'+
-          'V68 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
+          'V69 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
           ' · P'+folioNum+' · '+escapeHtml(_reason)+'</div>';
       }
       return '<div class="tpage'+sideClass+'"><div class="sheet sheet--text"><div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
@@ -2792,7 +2805,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v68-frozen-bootstrap-floor',
+        'v69-visible-coordinate-capacity',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3494,32 +3507,35 @@ Third-party libraries remain subject to their own licenses.
                   if(!folded){
                     var _capacity = _folioTop - _line - _paraTop;
                     if(_capacity > 100){
-                      // V68 FROZEN PHYSICAL FLOOR
+                      // V69 TRUE VISIBLE COORDINATE AUTHORITY
                       //
-                      // V66 proved the FAST candidate branch is now active.
-                      // The remaining short floor came from this live refinement:
-                      // .folio participates in the sheet's flex flow, so its
-                      // measured top can move UP as page text grows. Replacing
-                      // the bootstrap capacity with that smaller moving value
-                      // creates a self-tightening floor.
+                      // This is the exact physical body-text height available on
+                      // the rendered page:
                       //
-                      // Never allow the live flex measurement to reduce the
-                      // synchronous pre-pagination physical capacity. It may
-                      // only confirm it or increase it.
-                      var _authoritativeCapacity = Math.max(
-                        gfV68BootstrapTextCapacity || 0,
-                        gfUnfoldedPhysicalTextCapacity || 0,
-                        _capacity
-                      );
+                      //   actual visible folio top
+                      //   - one rendered body line
+                      //   - actual visible paragraph top
+                      //
+                      // Unlike the bootstrap formula, there is no inferred
+                      // padding or inferred folio height in this number.
+                      gfV69VisibleCoordinateCapacity = _capacity;
 
                       v64CapacityChanged =
-                        !(gfUnfoldedPhysicalTextCapacity > 0) ||
-                        Math.abs(gfUnfoldedPhysicalTextCapacity - _authoritativeCapacity) > 2;
+                        Math.abs(
+                          (gfUnfoldedPhysicalTextCapacity || 0) - _capacity
+                        ) > 2;
 
-                      gfUnfoldedPhysicalTextCapacity = _authoritativeCapacity;
-                      window.__gfDebug.v68BootstrapCapacity = gfV68BootstrapTextCapacity;
-                      window.__gfDebug.v68LiveFlexCapacity = _capacity;
-                      window.__gfDebug.v64PhysicalTextCapacity = _authoritativeCapacity;
+                      // Once learned, this exact coordinate-derived capacity is
+                      // the unfolded Bible authority.
+                      gfUnfoldedPhysicalTextCapacity = _capacity;
+
+                      window.__gfDebug.v68BootstrapCapacity =
+                        gfV68BootstrapTextCapacity;
+                      window.__gfDebug.v69VisibleParaTop = _paraTop;
+                      window.__gfDebug.v69VisibleFolioTop = _folioTop;
+                      window.__gfDebug.v69VisibleLinePx = _line;
+                      window.__gfDebug.v69VisibleCoordinateCapacity = _capacity;
+                      window.__gfDebug.v64PhysicalTextCapacity = _capacity;
                       window.__gfDebug.v64VisibleLinePx = _line;
                     }
                   }
@@ -3537,9 +3553,15 @@ Third-party libraries remain subject to their own licenses.
               !gfV64CapacityRebuildDone &&
               gfUnfoldedPhysicalTextCapacity > 0;
 
-            if(mismatch || needsV64CapacityRebuild){
+            var needsV69CoordinateRebuild =
+              !folded &&
+              !gfV69CoordinateRebuildDone &&
+              gfV69VisibleCoordinateCapacity > 0;
+
+            if(mismatch || needsV64CapacityRebuild || needsV69CoordinateRebuild){
               gfLiveLeafRebuildInFlight = true;
               if(needsV64CapacityRebuild) gfV64CapacityRebuildDone = true;
+              if(needsV69CoordinateRebuild) gfV69CoordinateRebuildDone = true;
               gfPaginationPageW = liveW;
               gfPaginationPageH = liveH;
 
@@ -3591,7 +3613,7 @@ Third-party libraries remain subject to their own licenses.
         if(!folded){
           var _v65 = document.createElement('div');
           _v65.id = 'gf-v65-marker';
-          _v65.textContent = 'V68 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
+          _v65.textContent = 'V69 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
           document.body.appendChild(_v65);
         }
       }catch(_v65MarkerErr){}
