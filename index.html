@@ -1609,7 +1609,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V57 unfolded direct folio authority + one-line physical floor';
+      window.__gfDebug.paginationModel = 'V58 actual live text-sheet height + direct folio authority';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2562,7 +2562,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v57-unfolded-folio-authority',
+        'v58-live-sheet-height',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3190,13 +3190,35 @@ Third-party libraries remain subject to their own licenses.
             if(gfLiveLeafRebuildInFlight) return;
             if(!flipEl || !flipEl.length) return;
 
-            var livePage = flipEl.find('.turn-page:visible').get(0) ||
+            // V58: unfolded pagination must calibrate from the ACTUAL visible
+            // text leaf, not the Turn.js wrapper. The wrapper can report the
+            // requested spread geometry while the rendered .sheet--text that
+            // owns the folio/text floor has a different layout box.
+            var liveSheet = !folded
+              ? (flipEl.find('.turn-page:visible .sheet--text').get(0) ||
+                 flipEl.find('.sheet--text').get(0))
+              : null;
+
+            var livePage = liveSheet ||
+                           flipEl.find('.turn-page:visible').get(0) ||
                            flipEl.find('.turn-page').get(0);
+
             if(!livePage || !livePage.getBoundingClientRect) return;
 
             var liveRect = livePage.getBoundingClientRect();
-            var liveW = Math.round(liveRect.width || 0);
-            var liveH = Math.round(liveRect.height || 0);
+
+            // Prefer the sheet's layout dimensions when available. These are
+            // the exact CSS dimensions used to lay out text and folio, and are
+            // therefore what the hidden pagination surface must reproduce.
+            var liveW = Math.round(
+              (liveSheet && (liveSheet.clientWidth || liveSheet.offsetWidth)) ||
+              liveRect.width || 0
+            );
+            var liveH = Math.round(
+              (liveSheet && (liveSheet.clientHeight || liveSheet.offsetHeight)) ||
+              liveRect.height || 0
+            );
+
             if(liveW < 100 || liveH < 150) return;
 
             // Reject an accidental spread wrapper in unfolded mode. A folded
@@ -3210,6 +3232,23 @@ Third-party libraries remain subject to their own licenses.
 
             // Always remember the true visible leaf for this layout.
             rememberPaginationGeometry(liveW, liveH);
+
+            window.__gfDebug = window.__gfDebug || {};
+            window.__gfDebug.v58LiveSheetW = liveW;
+            window.__gfDebug.v58LiveSheetH = liveH;
+            if(liveSheet){
+              try{
+                var _folio = liveSheet.querySelector('.folio');
+                var _para = liveSheet.querySelector('.para');
+                if(_folio && _para){
+                  var _sr = liveSheet.getBoundingClientRect();
+                  var _fr = _folio.getBoundingClientRect();
+                  var _pr = _para.getBoundingClientRect();
+                  window.__gfDebug.v58LiveParaTop = Math.round(_pr.top - _sr.top);
+                  window.__gfDebug.v58LiveFolioTop = Math.round(_fr.top - _sr.top);
+                }
+              }catch(_v58dbg){}
+            }
 
             if(mismatch){
               gfLiveLeafRebuildInFlight = true;
@@ -5088,8 +5127,15 @@ Third-party libraries remain subject to their own licenses.
         }else{
           UNFOLDED_W = vp.w;
           UNFOLDED_H = vp.h;
-          gfPaginationPageW = Math.max(1, Math.round(vp.w / 2));
-          gfPaginationPageH = vp.h;
+
+          // V58: a previously measured live text leaf is more authoritative
+          // than viewport/2 x viewport. Reuse it on subsequent opens/rotations
+          // so unfolded pagination starts from the real leaf height.
+          var restoredLiveUnfoldedGeometry = restoreRememberedPaginationGeometry();
+          if(!restoredLiveUnfoldedGeometry){
+            gfPaginationPageW = Math.max(1, Math.round(vp.w / 2));
+            gfPaginationPageH = vp.h;
+          }
         }
       }else if(folded){
         // Windowed folded mode may still benefit from a previously measured
