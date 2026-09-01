@@ -874,7 +874,13 @@ Third-party libraries remain subject to their own licenses.
     var gfLiveLeafRebuildInFlight = false;
     var gfV63PageCloseReasons = [];
     var gfV65PaginatorOrigin = 'UNKNOWN';
-    var gfV65BuildMarker = 'V66';
+    var gfV65BuildMarker = 'V67';
+    // V67: hidden paginator height can be systematically taller than the
+    // actual visible text block. Store the finalized hidden used-height for
+    // each page, then calibrate that bias against the rendered leaf.
+    var gfV67PageHiddenUsed = [];
+    var gfV67HeightBiasPx = 0;
+    var gfV67BiasRebuildDone = false;
     // V64: authoritative unfolded body-text capacity learned from the visible leaf.
     // This is the vertical distance from .para top to exactly one rendered line
     // above the ACTUAL visible folio.
@@ -1703,7 +1709,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V66 synchronous physical text capacity';
+      window.__gfDebug.paginationModel = 'V67 visible-height bias calibration';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1740,6 +1746,7 @@ Third-party libraries remain subject to their own licenses.
 
       var pages = [];
       var pageCloseReasons = [];
+      var pageHiddenUsed = [];
       var pageParts = [];
       var usedH = 0;
       var firstPage = true;
@@ -1817,6 +1824,7 @@ Third-party libraries remain subject to their own licenses.
 
         pages.push(out);
         pageCloseReasons.push(String(reason || 'UNLABELED FLUSH'));
+        pageHiddenUsed.push(Number(usedH) || 0);
         pageParts = [];
         usedH = 0;
         firstPage = false;
@@ -2189,10 +2197,15 @@ Third-party libraries remain subject to their own licenses.
             if(measured && isFinite(measured.used) &&
                gfUnfoldedPhysicalTextCapacity > 0){
               window.__gfDebug = window.__gfDebug || {};
+              var _v67EffectiveCapacity =
+                gfUnfoldedPhysicalTextCapacity + Math.max(0, gfV67HeightBiasPx || 0);
+
               window.__gfDebug.v66CandidateUsed = measured.used;
               window.__gfDebug.v66PhysicalTextCapacity = gfUnfoldedPhysicalTextCapacity;
+              window.__gfDebug.v67HeightBiasPx = gfV67HeightBiasPx || 0;
+              window.__gfDebug.v67EffectiveCapacity = _v67EffectiveCapacity;
               window.__gfDebug.v66CandidateDecision =
-                measured.used <= (gfUnfoldedPhysicalTextCapacity + 1);
+                measured.used <= (_v67EffectiveCapacity + 1);
               return window.__gfDebug.v66CandidateDecision;
             }
           }catch(_v66CandidateErr){}
@@ -2351,11 +2364,16 @@ Third-party libraries remain subject to their own licenses.
           if(takeWords <= 0){
             if(pageParts.length){
               flushPage(
-                'V66 NO WORD FIT — candidate rejected | p=' + p +
+                'V67 NO WORD FIT — candidate rejected | p=' + p +
                 ' | remaining=' + remaining.length +
                 ' | usedH=' + Math.round(usedH) +
                 ' | usableH=' + Math.round(usableH) +
-                ' | liveCap=' + Math.round(gfUnfoldedPhysicalTextCapacity || 0)
+                ' | liveCap=' + Math.round(gfUnfoldedPhysicalTextCapacity || 0) +
+                ' | bias=' + Math.round(gfV67HeightBiasPx || 0) +
+                ' | effCap=' + Math.round(
+                    (gfUnfoldedPhysicalTextCapacity || 0) +
+                    Math.max(0, gfV67HeightBiasPx || 0)
+                  )
               );
               continue;
             }
@@ -2419,8 +2437,10 @@ Third-party libraries remain subject to their own licenses.
       // aligned one-to-one with the finished Bible pageBlocks. Ordinary books
       // may be repacked later; tracer is intended for the Bible debugging path.
       gfV63PageCloseReasons = pageCloseReasons.slice();
+      gfV67PageHiddenUsed = pageHiddenUsed.slice();
       window.__gfDebug = window.__gfDebug || {};
       window.__gfDebug.v63PageCloseReasons = gfV63PageCloseReasons.slice();
+      window.__gfDebug.v67PageHiddenUsed = gfV67PageHiddenUsed.slice();
 
       // Existing continuation-aware pack remains useful for speed/structure.
       pages = finalPackPages(pages);
@@ -2473,7 +2493,7 @@ Third-party libraries remain subject to their own licenses.
           ? gfV63PageCloseReasons[folioNum-1]
           : 'NO CLOSE REASON RECORDED';
         v63Tag = '<div class="gf-v63-close-tag">'+
-          'V66 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
+          'V67 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
           ' · P'+folioNum+' · '+escapeHtml(_reason)+'</div>';
       }
       return '<div class="tpage'+sideClass+'"><div class="sheet sheet--text"><div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
@@ -2786,7 +2806,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v66-synchronous-physical-capacity',
+        'v67-visible-height-bias-calibration',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3495,6 +3515,52 @@ Third-party libraries remain subject to their own licenses.
                       gfUnfoldedPhysicalTextCapacity = _capacity;
                       window.__gfDebug.v64PhysicalTextCapacity = _capacity;
                       window.__gfDebug.v64VisibleLinePx = _line;
+
+                      // V67 VISIBLE-HEIGHT BIAS CALIBRATION
+                      //
+                      // Compare the hidden paginator's finalized used-height for
+                      // THIS visible folio with the actual rendered text height.
+                      // If hidden measurement says, for example, 570px used while
+                      // the visible text physically occupies only 480px, that
+                      // ~90px difference is precisely the false early-stop bias.
+                      var _folioNum = parseInt(String(_folio.textContent || '').trim(), 10);
+                      var _lastVisible = _para.lastElementChild;
+                      var _visibleUsed = 0;
+
+                      if(_lastVisible){
+                        var _lastRect = _lastVisible.getBoundingClientRect();
+                        var _lastStyle = getComputedStyle(_lastVisible);
+                        var _lastMb = parseFloat(_lastStyle.marginBottom) || 0;
+                        _visibleUsed = Math.max(
+                          0,
+                          _lastRect.bottom - _pr.top + _lastMb
+                        );
+                      }
+
+                      var _hiddenUsed =
+                        (_folioNum > 0 && gfV67PageHiddenUsed[_folioNum - 1] > 0)
+                          ? gfV67PageHiddenUsed[_folioNum - 1]
+                          : 0;
+
+                      if(_hiddenUsed > 0 && _visibleUsed > 0){
+                        var _bias = _hiddenUsed - _visibleUsed;
+
+                        // Only compensate a genuine positive hidden-measurement
+                        // overstatement, and cap it to a sane number of body lines.
+                        var _maxBias = _line * 8;
+                        _bias = Math.max(0, Math.min(_maxBias, _bias));
+
+                        if(_bias > 2){
+                          gfV67HeightBiasPx = _bias;
+                        }
+
+                        window.__gfDebug.v67VisibleFolio = _folioNum;
+                        window.__gfDebug.v67VisibleUsed = _visibleUsed;
+                        window.__gfDebug.v67HiddenUsed = _hiddenUsed;
+                        window.__gfDebug.v67HeightBiasPx = gfV67HeightBiasPx;
+                        window.__gfDebug.v67EffectiveCapacity =
+                          gfUnfoldedPhysicalTextCapacity + gfV67HeightBiasPx;
+                      }
                     }
                   }
                 }
@@ -3511,9 +3577,16 @@ Third-party libraries remain subject to their own licenses.
               !gfV64CapacityRebuildDone &&
               gfUnfoldedPhysicalTextCapacity > 0;
 
-            if(mismatch || needsV64CapacityRebuild){
+            var needsV67BiasRebuild =
+              !folded &&
+              !gfV67BiasRebuildDone &&
+              gfV67HeightBiasPx > 2 &&
+              gfUnfoldedPhysicalTextCapacity > 0;
+
+            if(mismatch || needsV64CapacityRebuild || needsV67BiasRebuild){
               gfLiveLeafRebuildInFlight = true;
               if(needsV64CapacityRebuild) gfV64CapacityRebuildDone = true;
+              if(needsV67BiasRebuild) gfV67BiasRebuildDone = true;
               gfPaginationPageW = liveW;
               gfPaginationPageH = liveH;
 
@@ -3565,7 +3638,7 @@ Third-party libraries remain subject to their own licenses.
         if(!folded){
           var _v65 = document.createElement('div');
           _v65.id = 'gf-v65-marker';
-          _v65.textContent = 'V66 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
+          _v65.textContent = 'V67 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
           document.body.appendChild(_v65);
         }
       }catch(_v65MarkerErr){}
