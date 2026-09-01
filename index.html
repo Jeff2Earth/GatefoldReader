@@ -1609,7 +1609,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V59 unfolded measurement inside live screen context + direct folio authority';
+      window.__gfDebug.paginationModel = 'V60 unfolded continuation to true physical folio floor';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2196,15 +2196,35 @@ Third-party libraries remain subject to their own licenses.
             pageParts.push({text:piece, paraId:p, cont:false});
           }
 
-          // This piece was verified against the real page; treat the page as
-          // spent for the fast estimate's purposes so any further paragraph
-          // on this page correctly falls through to a real check too.
-          usedH = usableH;
+          // V60 CONTINUE-TO-PHYSICAL-FLOOR
+          // This fragment has already been verified against the real rendered
+          // page. In unfolded mode, do NOT mark the page artificially full and
+          // do NOT flush merely because this source paragraph has a remainder.
+          //
+          // Carry forward the ACTUAL rendered text height and keep feeding the
+          // remainder through the same physical folio test. The page closes only
+          // when the browser says no additional word physically fits.
           remaining = remaining.slice(takeWords);
 
-          if(remaining.length){
-            paragraphContinuation = true;
-            flushPage();
+          if(!folded){
+            try{
+              var acceptedSplitMeasure = realFitMeasure(existingPageHtml(), '');
+              if(acceptedSplitMeasure && isFinite(acceptedSplitMeasure.used)){
+                usedH = acceptedSplitMeasure.used;
+              }
+            }catch(_v60MeasureErr){}
+
+            if(remaining.length){
+              paragraphContinuation = true;
+              continue;
+            }
+          }else{
+            // Preserve the proven V53 cover-screen behavior exactly.
+            usedH = usableH;
+            if(remaining.length){
+              paragraphContinuation = true;
+              flushPage();
+            }
           }
         }
       }
@@ -2562,7 +2582,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v59-contextual-physical-measure',
+        'v60-continue-to-physical-floor',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
