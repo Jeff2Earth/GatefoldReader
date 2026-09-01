@@ -1565,14 +1565,12 @@ Third-party libraries remain subject to their own licenses.
       usableW *= 0.975;
       usableH *= folded ? 0.997 : 0.999;
 
-      // V41 CLEAN FLOOR
-      // One and only one floor expansion: four physical text lines in unfolded mode.
-      // Unlike V38/V40, we DO NOT also alter bottom padding, folio spacing,
-      // the 0.15-line safety reserve, or the 0.999 unfolded multiplier.
-      var unfoldedBottomBoost = folded ? 0 : (linePx * 4.0);
-      if(!folded){
-        usableH += unfoldedBottomBoost;
-      }
+      // V50 UNIFIED PHYSICAL FLOOR
+      // The browser-measured .para box is the bottom authority. Do not add the
+      // legacy +4-line unfolded allowance here. The small 0.15-line reserve above
+      // is the ONLY extra text-floor clearance, and realFitMeasure() uses that
+      // same clearance against the visible folio below.
+      var unfoldedBottomBoost = 0;
 
       window.__gfDebug = window.__gfDebug || {};
       window.__gfDebug.pageW = pageW;
@@ -1580,13 +1578,14 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.usableW = usableW;
       window.__gfDebug.usableH = usableH;
       window.__gfDebug.unfoldedBottomBoost = unfoldedBottomBoost;
+      window.__gfDebug.unifiedFloorClearanceLines = folded ? 0.65 : 0.15;
       window.__gfDebug.fontPx = fontPx;
       window.__gfDebug.linePx = linePx;
       window.__gfDebug.paraGapPx = paraGapPx;
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V49 Bible one-line folio guard + V48 fast path + V47 real bottom reserve';
+      window.__gfDebug.paginationModel = 'V51 unified floor + near-folio physical Bible guard';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1752,11 +1751,24 @@ Third-party libraries remain subject to their own licenses.
           used = Math.max(0, lastRect.bottom - paraRect.top + lastMarginBottom);
         }
 
-        var bibleFolioGuard = (!folded && typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length) ? linePx : 0;
-        var fits = !!paraEl && used <= (available - bibleFolioGuard) + 1;
+        // V50 UNIFIED PHYSICAL FLOOR: use the SAME small 0.15-line
+        // clearance here that the fast paginator reserves above. This removes
+        // V49's separate full-line folio penalty while still keeping the final
+        // rendered line visibly clear of the page number.
+        var folioEl = testEl.querySelector('.folio');
+        var folioTop = folioEl ? folioEl.getBoundingClientRect().top : 0;
+        var lastTextBottom = 0;
+        if(paraEl && paraEl.lastElementChild){
+          lastTextBottom = paraEl.lastElementChild.getBoundingClientRect().bottom;
+        }
+        var folioClearancePx = folded ? 0 : (linePx * 0.15);
+        var clearsFolio = !folioEl || !lastTextBottom ||
+          lastTextBottom <= (folioTop - folioClearancePx + 1);
+
+        var fits = !!paraEl && used <= available + 1 && clearsFolio;
         testEl.remove();
 
-        return { fits:fits, used:used, available:available };
+        return { fits:fits, used:used, available:available, clearsFolio:clearsFolio };
       }
 
       function realFitCheck(existingHtml, candidateHtml){
@@ -1989,11 +2001,49 @@ Third-party libraries remain subject to their own licenses.
           var paragraphHeight = lines.length * linePx + paraGapPx;
 
           // Whole verse/paragraph fits in the remaining page area.
+          //
+          // V51 FOLIO GUARD:
+          // Canvas remains the fast authority through most of the page. Only
+          // when Bible text enters the final ~3 rendered lines do we ask the
+          // browser for an exact physical fit against the REAL folio position.
+          // This avoids a permanent bottom buffer while preventing the final
+          // visible line/verse from slipping behind the page number.
           if(usedH + paragraphHeight <= usableH){
-            pageParts.push({text:remaining.join(' '), paraId:p, cont:paragraphContinuation});
-            usedH += paragraphHeight;
-            remaining = [];
-            continue;
+            var nearBibleFolio = !!(
+              !folded &&
+              typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length &&
+              (usableH - (usedH + paragraphHeight)) <= (linePx * 3.0)
+            );
+
+            var acceptedNearMeasure = null;
+            var browserAcceptsNear = true;
+            if(nearBibleFolio){
+              try{
+                var nearCandidate = candidateHtmlForRemaining(remaining, p, paragraphContinuation);
+                acceptedNearMeasure = realFitMeasure(nearCandidate.html, '');
+                browserAcceptsNear = !!(acceptedNearMeasure && acceptedNearMeasure.fits);
+              }catch(_v51NearErr){
+                browserAcceptsNear = false;
+              }
+            }
+
+            if(!nearBibleFolio || browserAcceptsNear){
+              pageParts.push({text:remaining.join(' '), paraId:p, cont:paragraphContinuation});
+
+              // Near the folio, carry forward the browser's actual used height
+              // so the next verse starts from physical reality, not accumulated
+              // Canvas rounding. Away from the floor, keep the fast estimate.
+              if(nearBibleFolio && acceptedNearMeasure && isFinite(acceptedNearMeasure.used)){
+                usedH = acceptedNearMeasure.used;
+              }else{
+                usedH += paragraphHeight;
+              }
+
+              remaining = [];
+              continue;
+            }
+            // Browser says the estimate would cross the physical floor. Fall
+            // through to the existing DOM-verified binary splitter below.
           }
 
           // The fast estimate says this verse does not fit. Before accepting
@@ -2465,7 +2515,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v49-bible-folio-guard',
+        'v51-folio-guard',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
