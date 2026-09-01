@@ -150,7 +150,7 @@ Third-party libraries remain subject to their own licenses.
       <button id="gf-toolbar-fold" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Fold</button>
       <button id="gf-toolbar-sound" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Sound</button>
       <button id="gf-fullscreen-btn" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Fullscreen</button>
-      <button id="gf-toolbar-debug" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Debug</button>
+      
     </div>
   </div>
 
@@ -1041,7 +1041,7 @@ Third-party libraries remain subject to their own licenses.
     }
 
 
-    // V75.1 FRESH CHAPTER PAGES
+    // V74 FRESH CHAPTER PAGES
     // This marker exists only inside pagination input; it is never rendered.
     var GF_CHAPTER_BREAK = '[[GFCHAPTERBREAK]]';
     var gfChapterBreaksActive = false;
@@ -1055,7 +1055,7 @@ Third-party libraries remain subject to their own licenses.
       if(!t || t.length > 120) return false;
 
       // Plain-text / DOCX / PDF chapter conventions.
-      if(/^(?:chapter|chap\.?)\s+(?:\d{1,4}|[ivxlcdm]{1,12}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\b|[\s:.\-—])/i.test(t)){
+      if(/^(?:chapter|chap\.?)\s+(?:\d{1,4}|[ivxlcdm]{1,12})(?:\b|[\s:.\-—])/i.test(t)){
         return true;
       }
       if(/^(?:prologue|epilogue)\b/i.test(t)) return true;
@@ -1096,7 +1096,7 @@ Third-party libraries remain subject to their own licenses.
           // Bible chapters can start in the MIDDLE of an extracted paragraph,
           // e.g. "...1:31 ... 2:1 Thus the heavens...". Split exactly before
           // every verse-1 reference so the chapter can truly start at page top.
-          var re = /\b\d{1,3}:1\b/g;
+          var re = /(?:^|\s)(\d{1,3}:1)(?=\s|[A-Z])/g;
           var matches = [];
           var m;
           while((m = re.exec(raw)) !== null){
@@ -4078,7 +4078,7 @@ Third-party libraries remain subject to their own licenses.
       }
 
       if(ext === 'txt'){
-        pendingBibleBooks = []; pendingChapterHeadings = []; pendingEpubHeadingMeta = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none'; pendingEpubArtwork = {}; pendingEpubCoverUrl = '';
+        pendingBibleBooks = []; pendingChapterHeadings = []; pendingEpubHeadingMeta = []; bibleIsLoaded = false; biblePageIndex = {}; bibleJumpEl.style.display = 'none'; pendingEpubArtwork = {}; pendingEpubCoverUrl = '';
         var r1 = new FileReader();
         r1.onload = function(e){
           try{
@@ -4090,7 +4090,7 @@ Third-party libraries remain subject to their own licenses.
         r1.readAsText(file);
 
       } else if(ext === 'docx'){
-        pendingBibleBooks = []; pendingChapterHeadings = []; pendingEpubHeadingMeta = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none'; pendingEpubArtwork = {}; pendingEpubCoverUrl = '';
+        pendingBibleBooks = []; pendingChapterHeadings = []; pendingEpubHeadingMeta = []; bibleIsLoaded = false; biblePageIndex = {}; bibleJumpEl.style.display = 'none'; pendingEpubArtwork = {}; pendingEpubCoverUrl = '';
         if(typeof window.mammoth === 'undefined'){
           showLoadError('The Word reader is still loading \u2014 try again in a moment.');
           return;
@@ -4106,7 +4106,7 @@ Third-party libraries remain subject to their own licenses.
         r2.readAsArrayBuffer(file);
 
       } else if(ext === 'pdf'){
-        pendingBibleBooks = []; pendingChapterHeadings = []; pendingEpubHeadingMeta = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none'; pendingEpubArtwork = {}; pendingEpubCoverUrl = '';
+        pendingBibleBooks = []; pendingChapterHeadings = []; pendingEpubHeadingMeta = []; bibleIsLoaded = false; biblePageIndex = {}; bibleJumpEl.style.display = 'none'; pendingEpubArtwork = {}; pendingEpubCoverUrl = '';
         if(typeof window.pdfjsLib === 'undefined'){
           showLoadError('The PDF reader is still loading \u2014 try again in a moment.');
           return;
@@ -6712,4 +6712,4 @@ Third-party libraries remain subject to their own licenses.
   }
 })();
 
-  </script>
+        </script>
