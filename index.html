@@ -874,7 +874,7 @@ Third-party libraries remain subject to their own licenses.
     var gfLiveLeafRebuildInFlight = false;
     var gfV63PageCloseReasons = [];
     var gfV65PaginatorOrigin = 'UNKNOWN';
-    var gfV65BuildMarker = 'V70';
+    var gfV65BuildMarker = 'V71';
     // V64: authoritative unfolded body-text capacity learned from the visible leaf.
     // This is the vertical distance from .para top to exactly one rendered line
     // above the ACTUAL visible folio.
@@ -891,6 +891,7 @@ Third-party libraries remain subject to their own licenses.
     // paragraph-to-folio capacity and rebuild exactly once with that value.
     var gfV70FillRebuildDone = false;
     var gfV70CaptureTimer = 0;
+    var gfV71LastCaptureReason = 'not-run';
     var gfV64CapacityRebuildDone = false;
 
     // V22 REMEMBERED LIVE GEOMETRY
@@ -1360,7 +1361,7 @@ Third-party libraries remain subject to their own licenses.
       pages = pages.filter(hasText);
 
       window.__gfDebug = window.__gfDebug || {};
-      window.__gfDebug.v65Build = 'V70';
+      window.__gfDebug.v65Build = 'V71';
       window.__gfDebug.v65PaginatorOrigin = gfV65PaginatorOrigin;
       window.__gfDebug.hardPhysicalFit = 'V45 rendered-page overflow correction + pull-forward';
       window.__gfDebug.hardPhysicalFitGuard = guard;
@@ -1716,7 +1717,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V70 rendered-leaf fill';
+      window.__gfDebug.paginationModel = 'V71 direct DOM leaf capture';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2373,14 +2374,15 @@ Third-party libraries remain subject to their own licenses.
           if(takeWords <= 0){
             if(pageParts.length){
               flushPage(
-                'V70 NO WORD FIT — candidate rejected | p=' + p +
+                'V71 NO WORD FIT — candidate rejected | p=' + p +
                 ' | remaining=' + remaining.length +
                 ' | usedH=' + Math.round(usedH) +
                 ' | usableH=' + Math.round(usableH) +
                 ' | bootCap=' + Math.round(gfV68BootstrapTextCapacity || 0) +
                 ' | coordCap=' + Math.round(gfV69VisibleCoordinateCapacity || 0) +
                 ' | liveCap=' + Math.round(gfUnfoldedPhysicalTextCapacity || 0) +
-                ' | fill=' + (gfV70FillRebuildDone ? 'YES' : 'NO')
+                ' | fill=' + (gfV70FillRebuildDone ? 'YES' : 'NO') +
+                ' | cap=' + String(gfV71LastCaptureReason || 'n/a')
               );
               continue;
             }
@@ -2498,7 +2500,7 @@ Third-party libraries remain subject to their own licenses.
           ? gfV63PageCloseReasons[folioNum-1]
           : 'NO CLOSE REASON RECORDED';
         v63Tag = '<div class="gf-v63-close-tag">'+
-          'V70 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
+          'V71 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
           ' · P'+folioNum+' · '+escapeHtml(_reason)+'</div>';
       }
       return '<div class="tpage'+sideClass+'"><div class="sheet sheet--text"><div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
@@ -2811,7 +2813,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v70-rendered-leaf-fill',
+        'v71-direct-dom-leaf-capture',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3278,10 +3280,12 @@ Third-party libraries remain subject to their own licenses.
     }
 
     
-    // V70 RENDERED-LEAF FILL
-    // Find an ACTUALLY VISIBLE unfolded text leaf after Turn.js has painted it.
-    // Then use its real paragraph-top and folio-top coordinates as the one true
-    // body-text capacity and rebuild once.
+
+    // V71 DIRECT DOM LEAF CAPTURE
+    // Ignore Turn.js/jQuery visibility state entirely. Search the rendered DOM
+    // for every .sheet--text, keep only sheets that actually intersect the
+    // viewport, and derive the physical text capacity directly from the best
+    // on-screen leaf.
     function gfV70ScheduleRenderedLeafFill(){
       if(folded || gfV70FillRebuildDone) return;
       if(gfV70CaptureTimer) clearTimeout(gfV70CaptureTimer);
@@ -3291,47 +3295,76 @@ Third-party libraries remain subject to their own licenses.
 
         try{
           if(folded || gfV70FillRebuildDone) return;
-          if(!flipEl || !flipEl.length) return;
-          if(!(typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length)) return;
+          if(!(typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length)){
+            gfV71LastCaptureReason = 'not-bible';
+            return;
+          }
 
           var viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
           var viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
-
+          var nodes = document.querySelectorAll('#flipbook .sheet--text, #gf-screen .sheet--text, .gf-root .sheet--text');
           var candidates = [];
-          flipEl.find('.sheet--text').each(function(){
-            var sheet = this;
+
+          for(var i=0;i<nodes.length;i++){
+            var sheet = nodes[i];
+            if(!sheet || !sheet.getBoundingClientRect) continue;
+
             var para = sheet.querySelector('.para');
             var folio = sheet.querySelector('.folio');
-            if(!para || !folio) return;
+            if(!para || !folio) continue;
 
             var sr = sheet.getBoundingClientRect();
-            if(!(sr.width > 100 && sr.height > 150)) return;
+            if(!(sr.width > 100 && sr.height > 150)) continue;
 
-            // Require meaningful intersection with the actual viewport.
-            var ix = Math.max(0, Math.min(sr.right, viewportW) - Math.max(sr.left, 0));
-            var iy = Math.max(0, Math.min(sr.bottom, viewportH) - Math.max(sr.top, 0));
-            var visibleArea = ix * iy;
-            if(visibleArea <= 0) return;
+            var ix = Math.max(
+              0,
+              Math.min(sr.right, viewportW) - Math.max(sr.left, 0)
+            );
+            var iy = Math.max(
+              0,
+              Math.min(sr.bottom, viewportH) - Math.max(sr.top, 0)
+            );
+            var area = ix * iy;
+
+            if(area <= 0) continue;
+
+            // Reject tiny slivers from pages being curled/offscreen.
+            var ownArea = sr.width * sr.height;
+            if(!(ownArea > 0) || area / ownArea < 0.35) continue;
 
             candidates.push({
               sheet:sheet,
               para:para,
               folio:folio,
               rect:sr,
-              area:visibleArea
+              area:area,
+              visibleRatio:area/ownArea
             });
+          }
+
+          window.__gfDebug = window.__gfDebug || {};
+          window.__gfDebug.v71CandidateCount = candidates.length;
+
+          if(!candidates.length){
+            gfV71LastCaptureReason = 'no-visible-sheet';
+            window.__gfDebug.v71CaptureReason = gfV71LastCaptureReason;
+            return;
+          }
+
+          // Prefer a largely-visible leaf, then greatest visible area.
+          candidates.sort(function(a,b){
+            if(Math.abs(b.visibleRatio-a.visibleRatio) > 0.05){
+              return b.visibleRatio-a.visibleRatio;
+            }
+            return b.area-a.area;
           });
 
-          if(!candidates.length) return;
-
-          // Prefer the leaf with the greatest true on-screen area.
-          candidates.sort(function(a,b){ return b.area - a.area; });
           var c = candidates[0];
-
           var pr = c.para.getBoundingClientRect();
           var fr = c.folio.getBoundingClientRect();
           var pcs = getComputedStyle(c.para);
           var line = parseFloat(pcs.lineHeight);
+
           if(!isFinite(line) || line <= 0){
             line = (parseFloat(pcs.fontSize) || 13) * 1.6;
           }
@@ -3340,20 +3373,26 @@ Third-party libraries remain subject to their own licenses.
           var folioTop = fr.top - c.rect.top;
           var capacity = folioTop - line - paraTop;
 
-          if(!(capacity > 100)) return;
+          window.__gfDebug.v71SheetW = c.rect.width;
+          window.__gfDebug.v71SheetH = c.rect.height;
+          window.__gfDebug.v71VisibleRatio = c.visibleRatio;
+          window.__gfDebug.v71ParaTop = paraTop;
+          window.__gfDebug.v71FolioTop = folioTop;
+          window.__gfDebug.v71LinePx = line;
+          window.__gfDebug.v71Capacity = capacity;
+
+          if(!(capacity > 100)){
+            gfV71LastCaptureReason = 'bad-capacity';
+            window.__gfDebug.v71CaptureReason = gfV71LastCaptureReason;
+            return;
+          }
 
           gfV69VisibleCoordinateCapacity = capacity;
           gfUnfoldedPhysicalTextCapacity = capacity;
           gfV70FillRebuildDone = true;
+          gfV71LastCaptureReason = 'captured';
+          window.__gfDebug.v71CaptureReason = gfV71LastCaptureReason;
 
-          window.__gfDebug = window.__gfDebug || {};
-          window.__gfDebug.v70VisibleParaTop = paraTop;
-          window.__gfDebug.v70VisibleFolioTop = folioTop;
-          window.__gfDebug.v70VisibleLinePx = line;
-          window.__gfDebug.v70VisibleCoordinateCapacity = capacity;
-
-          // Preserve current reading position while the newly learned physical
-          // capacity repaginates the book.
           var snap = viewportAuthoritativeSnapshot || captureReadingSnapshot();
           suppressProgressSave = true;
 
@@ -3377,12 +3416,19 @@ Third-party libraries remain subject to their own licenses.
                 );
                 flipEl.turn('page', target);
               }
-            }catch(_v70RestoreErr){}
+            }catch(_v71RestoreErr){}
             suppressProgressSave = false;
           }, 0);
 
-        }catch(_v70CaptureErr){}
-      }, 420);
+        }catch(_v71CaptureErr){
+          gfV71LastCaptureReason = 'exception';
+          try{
+            window.__gfDebug = window.__gfDebug || {};
+            window.__gfDebug.v71CaptureReason = gfV71LastCaptureReason;
+            window.__gfDebug.v71Error = String(_v71CaptureErr && _v71CaptureErr.message || _v71CaptureErr);
+          }catch(_v71DbgErr){}
+        }
+      }, 500);
     }
 
 function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride){
@@ -3732,7 +3778,7 @@ function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride
         if(!folded){
           var _v65 = document.createElement('div');
           _v65.id = 'gf-v65-marker';
-          _v65.textContent = 'V70 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
+          _v65.textContent = 'V71 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
           document.body.appendChild(_v65);
         }
       }catch(_v65MarkerErr){}
