@@ -941,7 +941,7 @@ Third-party libraries remain subject to their own licenses.
       }
       measureEl.style.paddingLeft = (pageW * gfSelectedOuterMarginRatio()) + 'px';
       measureEl.style.paddingRight = (pageW * 0.05) + 'px';
-      document.querySelector('.gf-root').appendChild(measureEl);
+      ((!folded && document.getElementById('gf-screen')) || document.querySelector('.gf-root')).appendChild(measureEl);
       return measureEl;
     }
 
@@ -1394,7 +1394,7 @@ Third-party libraries remain subject to their own licenses.
           '<div class="running-head"'+(!folded ? ' style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"' : '')+'>'+escapeHtml(calLabel)+'</div>' +
           '<div class="para"></div>' +
           '<div class="folio"'+(!folded ? ' style="margin-top:1.5%!important;"' : '')+'>1</div>';
-        document.querySelector('.gf-root').appendChild(calEl);
+        ((!folded && document.getElementById('gf-screen')) || document.querySelector('.gf-root')).appendChild(calEl);
         var calPara = calEl.querySelector('.para');
         var calRect = calPara.getBoundingClientRect();
         usableW = calRect.width;
@@ -1534,7 +1534,7 @@ Third-party libraries remain subject to their own licenses.
                 '<div class="para"><p>'+escapeHtml(samples[_si].text)+'</p></div>' +
                 '<div class="folio"'+(!folded ? ' style="margin-top:1.5%!important;"' : '')+'>1</div>';
 
-              document.querySelector('.gf-root').appendChild(sampleEl);
+              ((!folded && document.getElementById('gf-screen')) || document.querySelector('.gf-root')).appendChild(sampleEl);
               var samplePara = sampleEl.querySelector('.para');
               var sampleP = sampleEl.querySelector('.para p');
 
@@ -1609,7 +1609,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V58 actual live text-sheet height + direct folio authority';
+      window.__gfDebug.paginationModel = 'V59 unfolded measurement inside live screen context + direct folio authority';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1759,7 +1759,7 @@ Third-party libraries remain subject to their own licenses.
           '<div class="running-head"'+(!folded ? ' style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"' : '')+'>'+escapeHtml(calLabel)+'</div>' +
           '<div class="para">'+existingHtml+candidateHtml+'</div>' +
           '<div class="folio"'+(!folded ? ' style="margin-top:1.5%!important;"' : '')+'>1</div>';
-        document.querySelector('.gf-root').appendChild(testEl);
+        ((!folded && document.getElementById('gf-screen')) || document.querySelector('.gf-root')).appendChild(testEl);
 
         var paraEl = testEl.querySelector('.para');
         var available = paraEl ? paraEl.clientHeight : 0;
@@ -2562,7 +2562,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v58-live-sheet-height',
+        'v59-contextual-physical-measure',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
