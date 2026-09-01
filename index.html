@@ -1593,7 +1593,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V52 unified floor + folded live-leaf/folio guard';
+      window.__gfDebug.paginationModel = 'V53 pre-seeded live leaf + one-line folded folio floor';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1769,7 +1769,9 @@ Third-party libraries remain subject to their own licenses.
         if(paraEl && paraEl.lastElementChild){
           lastTextBottom = paraEl.lastElementChild.getBoundingClientRect().bottom;
         }
-        var folioClearancePx = linePx * 0.15;
+        // V53: cover-screen pages stop one rendered line above the folio.
+        // Unfolded keeps V51/V52's proven 0.15-line floor unchanged.
+        var folioClearancePx = linePx * (folded ? 1.0 : 0.15);
         var clearsFolio = !folioEl || !lastTextBottom ||
           lastTextBottom <= (folioTop - folioClearancePx + 1);
 
@@ -2019,7 +2021,7 @@ Third-party libraries remain subject to their own licenses.
           if(usedH + paragraphHeight <= usableH){
             var nearBibleFolio = !!(
               typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length &&
-              (usableH - (usedH + paragraphHeight)) <= (linePx * 3.0)
+              (usableH - (usedH + paragraphHeight)) <= (linePx * (folded ? 6.0 : 3.0))
             );
 
             var acceptedNearMeasure = null;
@@ -2522,7 +2524,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v52-folded-actual-leaf',
+        'v53-folded-fast-floor',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3137,7 +3139,7 @@ Third-party libraries remain subject to their own licenses.
         }
       });
 
-      // V52 LIVE LEAF GEOMETRY CALIBRATION
+      // V53 LIVE LEAF VERIFICATION
       // Both folded and unfolded modes use the ACTUAL on-screen Turn.js leaf
       // rectangle as pagination authority. This is especially important on
       // cover screens, where browser chrome/aspect ratio can make remembered
@@ -4614,7 +4616,7 @@ Third-party libraries remain subject to their own licenses.
         // Do NOT clear viewportAuthoritativeSnapshot here. applyReadingMode()
         // can trigger the live-leaf geometry correction after the first rebuild.
         applyReadingMode(snap);
-      }, 650);
+      }, 260);
     }
 
     window.addEventListener('orientationchange', function(){
@@ -5030,29 +5032,31 @@ Third-party libraries remain subject to their own licenses.
       clearPaginationGeometry();
       computeResponsiveSizes();
 
-      // V25 LIVE LEAF:
-      // Folded keeps the proven remembered geometry path.
-      // Unfolded waits for the real rendered Turn.js leaf and calibrates from it.
-      if(folded){
-        restoreRememberedPaginationGeometry();
-      }
-
+      // V53 PRE-PAGINATION LIVE GEOMETRY
+      // In fullscreen reading mode, Turn.js's requested leaf geometry is
+      // deterministic from the settled viewport: one full-width leaf when
+      // folded, or half the spread width when unfolded. Seed pagination with
+      // that physical leaf BEFORE building the book so a large EPUB does not
+      // paginate once against stale remembered geometry and then paginate a
+      // second time after the live-leaf calibration discovers the real size.
       if(readingMode){
         var vp = getViewportSize();
 
-        // Previously subtracted a fixed 130px here to compensate for a
-        // width mismatch — but that mismatch was very likely a side effect
-        // of #flipbook being forced to fill the full screen via inset:0
-        // (now removed at its source). Use the real viewport directly and
-        // let the actual rendered size reveal whether any correction is
-        // still needed.
         if(folded){
           FOLDED_W = vp.w;
           FOLDED_H = vp.h;
+          gfPaginationPageW = vp.w;
+          gfPaginationPageH = vp.h;
         }else{
           UNFOLDED_W = vp.w;
           UNFOLDED_H = vp.h;
+          gfPaginationPageW = Math.max(1, Math.round(vp.w / 2));
+          gfPaginationPageH = vp.h;
         }
+      }else if(folded){
+        // Windowed folded mode may still benefit from a previously measured
+        // Turn.js leaf. The live calibration below remains the final authority.
+        restoreRememberedPaginationGeometry();
       }
 
       if(currentSource){
@@ -6152,4 +6156,4 @@ Third-party libraries remain subject to their own licenses.
   }
 })();
 
-</script>
+  </script>
