@@ -489,6 +489,20 @@ Third-party libraries remain subject to their own licenses.
   body:not(.gf-reading-full) #gf-apple-toolbar-handle{
     display:none!important;
   }
+
+  /* V61 TEMPORARY UNFOLDED FLOOR DIAGNOSTICS */
+  #gf-v61-diagnostic{
+    position:fixed;left:8px;bottom:8px;z-index:2147482500;
+    max-width:min(92vw,520px);padding:7px 9px;border-radius:6px;
+    background:rgba(0,0,0,.82);color:#fff;font:11px/1.35 monospace;
+    white-space:pre-wrap;pointer-events:none;
+  }
+  #gf-screen.gf-unfolded .sheet--text.gf-v61-probed{ position:relative!important; }
+  #gf-screen.gf-unfolded .sheet--text.gf-v61-probed::before{
+    content:"";position:absolute;left:0;right:0;
+    top:var(--gf-v61-floor-y,0px);height:2px;
+    background:#d00000;z-index:50;pointer-events:none;
+  }
 </style>
 <script>
 
@@ -1609,7 +1623,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V60 unfolded continuation to true physical folio floor';
+      window.__gfDebug.paginationModel = 'V61 visible unfolded physical-floor diagnostics';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2582,7 +2596,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v60-continue-to-physical-floor',
+        'v61-visible-floor-diagnostics',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3315,6 +3329,76 @@ Third-party libraries remain subject to their own licenses.
             gfLiveLeafRebuildInFlight = false;
           }
         }, 140);
+      }
+
+      // V61 TEMPORARY VISIBLE FLOOR DIAGNOSTIC
+      // Red line = one rendered line above the ACTUAL visible folio.
+      // Overlay reports visible geometry beside the paginator's current model.
+      if(!folded){
+        setTimeout(function(){
+          try{
+            var oldDiag = document.getElementById('gf-v61-diagnostic');
+            if(oldDiag) oldDiag.remove();
+
+            var sheets = flipEl.find('.turn-page:visible .sheet--text');
+            if(!sheets.length) sheets = flipEl.find('.sheet--text');
+
+            var rows = [];
+            sheets.each(function(index){
+              if(index > 1) return;
+              var sheet = this;
+              var para = sheet.querySelector('.para');
+              var folio = sheet.querySelector('.folio');
+              if(!para || !folio) return;
+
+              var sr = sheet.getBoundingClientRect();
+              var pr = para.getBoundingClientRect();
+              var fr = folio.getBoundingClientRect();
+              var last = para.lastElementChild;
+              var lr = last ? last.getBoundingClientRect() : null;
+              var pcs = getComputedStyle(para);
+              var lp = parseFloat(pcs.lineHeight);
+              if(!isFinite(lp) || lp <= 0){
+                lp = (parseFloat(pcs.fontSize) || 13) * 1.6;
+              }
+
+              var folioTop = fr.top - sr.top;
+              var floorY = folioTop - lp;
+              var lastBottom = lr ? (lr.bottom - sr.top) : 0;
+              var gapLines = lp ? (floorY - lastBottom) / lp : 0;
+
+              sheet.classList.add('gf-v61-probed');
+              sheet.style.setProperty('--gf-v61-floor-y', Math.round(floorY) + 'px');
+
+              rows.push(
+                'leaf '+(index+1)+
+                ' sheetH='+Math.round(sr.height)+
+                ' paraTop='+Math.round(pr.top-sr.top)+
+                ' folioTop='+Math.round(folioTop)+
+                ' floor='+Math.round(floorY)+
+                ' last='+Math.round(lastBottom)+
+                ' gap='+gapLines.toFixed(2)+' lines'
+              );
+            });
+
+            var dbg = window.__gfDebug || {};
+            rows.push(
+              'model page='+Math.round(dbg.pageW||0)+'x'+Math.round(dbg.pageH||0)+
+              ' usableH='+Math.round(dbg.usableH||0)+
+              ' line='+Number(dbg.linePx||0).toFixed(1)
+            );
+            rows.push(
+              'live sheet='+Math.round(dbg.v58LiveSheetW||0)+'x'+Math.round(dbg.v58LiveSheetH||0)+
+              ' liveParaTop='+Math.round(dbg.v58LiveParaTop||0)+
+              ' liveFolioTop='+Math.round(dbg.v58LiveFolioTop||0)
+            );
+
+            var panel = document.createElement('div');
+            panel.id = 'gf-v61-diagnostic';
+            panel.textContent = rows.join('\n');
+            document.body.appendChild(panel);
+          }catch(_v61DiagErr){}
+        }, 320);
       }
 
       bookTitle = title;
@@ -6260,4 +6344,4 @@ Third-party libraries remain subject to their own licenses.
   }
 })();
 
-  </script>
+</script>
