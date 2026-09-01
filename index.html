@@ -607,9 +607,6 @@ Third-party libraries remain subject to their own licenses.
     //   fold   = force single-page
     //   unfold = force two-page spread
     //   auto   = choose from the physical screen shape
-    //
-    // V72: Fresh install / cleared browser data defaults to Auto.
-    // A previously saved user choice still overrides this normally.
     var foldMode = 'auto';
 
     function autoFoldedForViewport(vp){
@@ -877,7 +874,7 @@ Third-party libraries remain subject to their own licenses.
     var gfLiveLeafRebuildInFlight = false;
     var gfV63PageCloseReasons = [];
     var gfV65PaginatorOrigin = 'UNKNOWN';
-    var gfV65BuildMarker = 'V72';
+    var gfV65BuildMarker = 'V73';
     // V64: authoritative unfolded body-text capacity learned from the visible leaf.
     // This is the vertical distance from .para top to exactly one rendered line
     // above the ACTUAL visible folio.
@@ -886,15 +883,10 @@ Third-party libraries remain subject to their own licenses.
     // can move upward as text grows, so a later live reading must never shrink
     // the floor below this bootstrap value.
     var gfV68BootstrapTextCapacity = 0;
-    // V69: true unfolded body-text capacity measured from the ACTUAL visible
-    // page coordinates: folioTop - one body line - paraTop.
-    var gfV69VisibleCoordinateCapacity = 0;
-    var gfV69CoordinateRebuildDone = false;
-    // V70: once a real visible text leaf is on screen, capture its physical
-    // paragraph-to-folio capacity and rebuild exactly once with that value.
-    var gfV70FillRebuildDone = false;
-    var gfV70CaptureTimer = 0;
-    var gfV71LastCaptureReason = 'not-run';
+    // V73 fixed-box diagnostics only; no post-render calibration loop.
+    var gfV73FixedBoxCapacity = 0;
+    var gfV73FixedBoxTop = 0;
+    var gfV73FixedBoxWidth = 0;
     var gfV64CapacityRebuildDone = false;
 
     // V22 REMEMBERED LIVE GEOMETRY
@@ -1364,7 +1356,7 @@ Third-party libraries remain subject to their own licenses.
       pages = pages.filter(hasText);
 
       window.__gfDebug = window.__gfDebug || {};
-      window.__gfDebug.v65Build = 'V72';
+      window.__gfDebug.v65Build = 'V73';
       window.__gfDebug.v65PaginatorOrigin = gfV65PaginatorOrigin;
       window.__gfDebug.hardPhysicalFit = 'V45 rendered-page overflow correction + pull-forward';
       window.__gfDebug.hardPhysicalFitGuard = guard;
@@ -1720,7 +1712,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V72 Auto default + V71 direct DOM leaf capture';
+      window.__gfDebug.paginationModel = 'V73 fixed physical text box';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1847,7 +1839,145 @@ Third-party libraries remain subject to their own licenses.
         ));
       }
 
+
+      // V73 DEVICE-INDEPENDENT FIXED PHYSICAL TEXT BOX
+      //
+      // The unfolded FAST paginator no longer asks a flexbox page where its
+      // text floor is. Instead it defines the body rectangle explicitly from
+      // the current physical leaf geometry and the reader's computed styles:
+      //
+      //   top    = 5% page-width top padding
+      //            + real running-head height
+      //            + real running-head bottom margin
+      //
+      //   bottom = page-height
+      //            - 5% page-width bottom padding
+      //            - real folio height
+      //            - one rendered body line
+      //
+      // Width comes from the current user-selected margins. All quantities are
+      // recomputed from pageW/pageH/font/settings, so this scales across Fold,
+      // Pixel Fold, OnePlus Open, tablets, rotation, font size, and margins.
+      //
+      // Critically, the .para below is NOT a flex item. Its height is fixed.
+      function gfV73FixedPhysicalMeasure(pageHtml){
+        var root = document.querySelector('.gf-root') || document.body;
+        var shell = document.createElement('div');
+        shell.className = 'sheet sheet--text';
+        shell.style.setProperty('position','fixed','important');
+        shell.style.setProperty('left','-10000px','important');
+        shell.style.setProperty('top','0','important');
+        shell.style.setProperty('width',pageW + 'px','important');
+        shell.style.setProperty('height',pageH + 'px','important');
+        shell.style.setProperty('padding','0','important');
+        shell.style.setProperty('margin','0','important');
+        shell.style.setProperty('overflow','hidden','important');
+        shell.style.setProperty('visibility','hidden','important');
+        shell.style.setProperty('pointer-events','none','important');
+        shell.style.setProperty('display','block','important');
+        shell.style.setProperty('box-sizing','border-box','important');
+
+        var head = document.createElement('div');
+        head.className = 'running-head';
+        head.textContent = calLabel || 'CHAPTER';
+        head.style.setProperty('position','absolute','important');
+        head.style.setProperty('left','0','important');
+        head.style.setProperty('right','0','important');
+        head.style.setProperty('top',(pageW * 0.05) + 'px','important');
+        head.style.setProperty('white-space','nowrap','important');
+        head.style.setProperty('overflow','hidden','important');
+        head.style.setProperty('text-overflow','ellipsis','important');
+
+        var folio = document.createElement('div');
+        folio.className = 'folio';
+        folio.textContent = '1';
+        folio.style.setProperty('position','absolute','important');
+        folio.style.setProperty('left','0','important');
+        folio.style.setProperty('right','0','important');
+        folio.style.setProperty('bottom',(pageW * 0.05) + 'px','important');
+        folio.style.setProperty('margin','0','important');
+
+        shell.appendChild(head);
+        shell.appendChild(folio);
+        root.appendChild(shell);
+
+        var headRect = head.getBoundingClientRect();
+        var headStyle = getComputedStyle(head);
+        var headMarginBottom = parseFloat(headStyle.marginBottom) || 0;
+        var folioRect = folio.getBoundingClientRect();
+
+        var topPad = pageW * 0.05;
+        var bottomPad = pageW * 0.05;
+        var bodyTop = topPad + headRect.height + headMarginBottom;
+        var bodyFloorY = pageH - bottomPad - folioRect.height - linePx;
+        var bodyHeight = Math.max(1, bodyFloorY - bodyTop);
+
+        // Runtime page-margin choices use symmetric physical text margins.
+        var sideRatio = gfSelectedOuterMarginRatio();
+        var sidePad = pageW * sideRatio;
+        var bodyWidth = Math.max(60, pageW - (sidePad * 2));
+
+        var para = document.createElement('div');
+        para.className = 'para';
+        para.style.setProperty('position','absolute','important');
+        para.style.setProperty('left',sidePad + 'px','important');
+        para.style.setProperty('top',bodyTop + 'px','important');
+        para.style.setProperty('width',bodyWidth + 'px','important');
+        para.style.setProperty('height',bodyHeight + 'px','important');
+        para.style.setProperty('min-height','0','important');
+        para.style.setProperty('max-height',bodyHeight + 'px','important');
+        para.style.setProperty('display','block','important');
+        para.style.setProperty('flex','none','important');
+        para.style.setProperty('overflow','visible','important');
+        para.style.setProperty('box-sizing','border-box','important');
+        para.innerHTML = String(pageHtml || '');
+        shell.appendChild(para);
+
+        var used = 0;
+        var last = para.lastElementChild;
+        if(last){
+          var pr = para.getBoundingClientRect();
+          var lr = last.getBoundingClientRect();
+          var ls = getComputedStyle(last);
+          var mb = parseFloat(ls.marginBottom) || 0;
+          used = Math.max(0, lr.bottom - pr.top + mb);
+        }
+
+        var fits = !last || used <= bodyHeight + 1;
+
+        gfV73FixedBoxCapacity = bodyHeight;
+        gfV73FixedBoxTop = bodyTop;
+        gfV73FixedBoxWidth = bodyWidth;
+
+        window.__gfDebug = window.__gfDebug || {};
+        window.__gfDebug.v73BoxTop = bodyTop;
+        window.__gfDebug.v73BoxFloorY = bodyFloorY;
+        window.__gfDebug.v73BoxCapacity = bodyHeight;
+        window.__gfDebug.v73BoxWidth = bodyWidth;
+        window.__gfDebug.v73Used = used;
+
+        shell.remove();
+
+        return {
+          fits:fits,
+          used:used,
+          available:bodyHeight,
+          clearsFolio:fits,
+          physicalFloorY:bodyFloorY,
+          lastTextBottomY:bodyTop + used,
+          fixedBox:true
+        };
+      }
+
       function realFitMeasure(existingHtml, candidateHtml){
+        // V73: Every unfolded FAST-page decision uses the same explicit
+        // physical rectangle. Folded/cover retains its proven V53 path.
+        if(!folded){
+          return gfV73FixedPhysicalMeasure(
+            String(existingHtml || '') + String(candidateHtml || '')
+          );
+        }
+
         var testEl = document.createElement('div');
         testEl.className = 'sheet sheet--text';
         testEl.style.position = 'fixed';
@@ -2184,53 +2314,9 @@ Third-party libraries remain subject to their own licenses.
       function realFitCandidateWords(words, paraId, isContinuation){
         var c = candidateHtmlForRemaining(words, paraId, isContinuation);
 
-        // V64 LIVE TEXT-CAPACITY AUTHORITY
-        //
-        // V63 proved this exact function was closing the short Bible pages:
-        // "NO WORD FIT — realFit rejected next word".
-        //
-        // For unfolded Bible pages, do not use realFitMeasure().fits as the
-        // binary-search decision. Instead compare the candidate's ACTUAL
-        // rendered body height with the physical capacity learned from the
-        // visible leaf itself:
-        //
-        //   visible folio top - one rendered line - visible para top
-        //
-        // The hidden probe is now used only to measure candidate text height,
-        // not to invent the bottom boundary.
-        if(!folded &&
-           typeof pendingBibleBooks !== 'undefined' &&
-           pendingBibleBooks.length){
-          try{
-            var measured = realFitMeasure(c.html, '');
-            if(measured && isFinite(measured.used) &&
-               gfUnfoldedPhysicalTextCapacity > 0){
-              window.__gfDebug = window.__gfDebug || {};
-              var _v69Capacity =
-                gfV69VisibleCoordinateCapacity > 0
-                  ? gfV69VisibleCoordinateCapacity
-                  : gfUnfoldedPhysicalTextCapacity;
-
-              window.__gfDebug.v66CandidateUsed = measured.used;
-              window.__gfDebug.v66PhysicalTextCapacity = gfUnfoldedPhysicalTextCapacity;
-              window.__gfDebug.v69VisibleCoordinateCapacity =
-                gfV69VisibleCoordinateCapacity;
-              window.__gfDebug.v69CandidateCapacity = _v69Capacity;
-              window.__gfDebug.v70CandidateCapacity = _v69Capacity;
-              window.__gfDebug.v66CandidateDecision =
-                measured.used <= (_v69Capacity + 1);
-              return window.__gfDebug.v66CandidateDecision;
-            }
-          }catch(_v66CandidateErr){}
-
-          // V66 safety: if the physical capacity somehow still failed to
-          // initialize, expose that explicitly instead of pretending the old
-          // hidden-floor result is the intended authority.
-          window.__gfDebug = window.__gfDebug || {};
-          window.__gfDebug.v66CapacityMissing = true;
-        }
-
-        // Folded/cover and non-Bible fallback remain unchanged.
+        // V73: realFitCheck() now means "does this exact rendered candidate
+        // stay inside the fixed physical body rectangle?" in unfolded mode.
+        // No flex floor, moving folio, live-cap callback, or Bible gate.
         return realFitCheck(c.html, '');
       }
 
@@ -2377,15 +2463,12 @@ Third-party libraries remain subject to their own licenses.
           if(takeWords <= 0){
             if(pageParts.length){
               flushPage(
-                'V72 NO WORD FIT — candidate rejected | p=' + p +
+                'V73 NO WORD FIT — candidate rejected | p=' + p +
                 ' | remaining=' + remaining.length +
                 ' | usedH=' + Math.round(usedH) +
                 ' | usableH=' + Math.round(usableH) +
-                ' | bootCap=' + Math.round(gfV68BootstrapTextCapacity || 0) +
-                ' | coordCap=' + Math.round(gfV69VisibleCoordinateCapacity || 0) +
-                ' | liveCap=' + Math.round(gfUnfoldedPhysicalTextCapacity || 0) +
-                ' | fill=' + (gfV70FillRebuildDone ? 'YES' : 'NO') +
-                ' | cap=' + String(gfV71LastCaptureReason || 'n/a')
+                ' | boxCap=' + Math.round(gfV73FixedBoxCapacity || 0) +
+                ' | boxTop=' + Math.round(gfV73FixedBoxTop || 0)
               );
               continue;
             }
@@ -2503,7 +2586,7 @@ Third-party libraries remain subject to their own licenses.
           ? gfV63PageCloseReasons[folioNum-1]
           : 'NO CLOSE REASON RECORDED';
         v63Tag = '<div class="gf-v63-close-tag">'+
-          'V72 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
+          'V73 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
           ' · P'+folioNum+' · '+escapeHtml(_reason)+'</div>';
       }
       return '<div class="tpage'+sideClass+'"><div class="sheet sheet--text"><div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
@@ -2816,7 +2899,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v72-auto-default',
+        'v73-fixed-physical-text-box',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3282,159 +3365,7 @@ Third-party libraries remain subject to their own licenses.
       return heads;
     }
 
-    
-
-    // V71 DIRECT DOM LEAF CAPTURE
-    // Ignore Turn.js/jQuery visibility state entirely. Search the rendered DOM
-    // for every .sheet--text, keep only sheets that actually intersect the
-    // viewport, and derive the physical text capacity directly from the best
-    // on-screen leaf.
-    function gfV70ScheduleRenderedLeafFill(){
-      if(folded || gfV70FillRebuildDone) return;
-      if(gfV70CaptureTimer) clearTimeout(gfV70CaptureTimer);
-
-      gfV70CaptureTimer = setTimeout(function(){
-        gfV70CaptureTimer = 0;
-
-        try{
-          if(folded || gfV70FillRebuildDone) return;
-          if(!(typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length)){
-            gfV71LastCaptureReason = 'not-bible';
-            return;
-          }
-
-          var viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
-          var viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
-          var nodes = document.querySelectorAll('#flipbook .sheet--text, #gf-screen .sheet--text, .gf-root .sheet--text');
-          var candidates = [];
-
-          for(var i=0;i<nodes.length;i++){
-            var sheet = nodes[i];
-            if(!sheet || !sheet.getBoundingClientRect) continue;
-
-            var para = sheet.querySelector('.para');
-            var folio = sheet.querySelector('.folio');
-            if(!para || !folio) continue;
-
-            var sr = sheet.getBoundingClientRect();
-            if(!(sr.width > 100 && sr.height > 150)) continue;
-
-            var ix = Math.max(
-              0,
-              Math.min(sr.right, viewportW) - Math.max(sr.left, 0)
-            );
-            var iy = Math.max(
-              0,
-              Math.min(sr.bottom, viewportH) - Math.max(sr.top, 0)
-            );
-            var area = ix * iy;
-
-            if(area <= 0) continue;
-
-            // Reject tiny slivers from pages being curled/offscreen.
-            var ownArea = sr.width * sr.height;
-            if(!(ownArea > 0) || area / ownArea < 0.35) continue;
-
-            candidates.push({
-              sheet:sheet,
-              para:para,
-              folio:folio,
-              rect:sr,
-              area:area,
-              visibleRatio:area/ownArea
-            });
-          }
-
-          window.__gfDebug = window.__gfDebug || {};
-          window.__gfDebug.v71CandidateCount = candidates.length;
-
-          if(!candidates.length){
-            gfV71LastCaptureReason = 'no-visible-sheet';
-            window.__gfDebug.v71CaptureReason = gfV71LastCaptureReason;
-            return;
-          }
-
-          // Prefer a largely-visible leaf, then greatest visible area.
-          candidates.sort(function(a,b){
-            if(Math.abs(b.visibleRatio-a.visibleRatio) > 0.05){
-              return b.visibleRatio-a.visibleRatio;
-            }
-            return b.area-a.area;
-          });
-
-          var c = candidates[0];
-          var pr = c.para.getBoundingClientRect();
-          var fr = c.folio.getBoundingClientRect();
-          var pcs = getComputedStyle(c.para);
-          var line = parseFloat(pcs.lineHeight);
-
-          if(!isFinite(line) || line <= 0){
-            line = (parseFloat(pcs.fontSize) || 13) * 1.6;
-          }
-
-          var paraTop = pr.top - c.rect.top;
-          var folioTop = fr.top - c.rect.top;
-          var capacity = folioTop - line - paraTop;
-
-          window.__gfDebug.v71SheetW = c.rect.width;
-          window.__gfDebug.v71SheetH = c.rect.height;
-          window.__gfDebug.v71VisibleRatio = c.visibleRatio;
-          window.__gfDebug.v71ParaTop = paraTop;
-          window.__gfDebug.v71FolioTop = folioTop;
-          window.__gfDebug.v71LinePx = line;
-          window.__gfDebug.v71Capacity = capacity;
-
-          if(!(capacity > 100)){
-            gfV71LastCaptureReason = 'bad-capacity';
-            window.__gfDebug.v71CaptureReason = gfV71LastCaptureReason;
-            return;
-          }
-
-          gfV69VisibleCoordinateCapacity = capacity;
-          gfUnfoldedPhysicalTextCapacity = capacity;
-          gfV70FillRebuildDone = true;
-          gfV71LastCaptureReason = 'captured';
-          window.__gfDebug.v71CaptureReason = gfV71LastCaptureReason;
-
-          var snap = viewportAuthoritativeSnapshot || captureReadingSnapshot();
-          suppressProgressSave = true;
-
-          buildBookFromParagraphs(
-            currentSource ? currentSource.paragraphs : [],
-            currentSource ? currentSource.title : bookTitle,
-            currentSource ? currentSource.author : '',
-            currentSource ? currentSource.chapterLabelOverride : ''
-          );
-
-          setTimeout(function(){
-            try{
-              if(snap && flipEl && flipEl.length){
-                var total = flipEl.turn('pages') || 1;
-                var target = Math.max(
-                  1,
-                  Math.min(
-                    total,
-                    Math.round((snap.ratio || 0) * Math.max(1,total-1)) + 1
-                  )
-                );
-                flipEl.turn('page', target);
-              }
-            }catch(_v71RestoreErr){}
-            suppressProgressSave = false;
-          }, 0);
-
-        }catch(_v71CaptureErr){
-          gfV71LastCaptureReason = 'exception';
-          try{
-            window.__gfDebug = window.__gfDebug || {};
-            window.__gfDebug.v71CaptureReason = gfV71LastCaptureReason;
-            window.__gfDebug.v71Error = String(_v71CaptureErr && _v71CaptureErr.message || _v71CaptureErr);
-          }catch(_v71DbgErr){}
-        }
-      }, 500);
-    }
-
-function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride){
+    function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride){
       currentSource = {
         paragraphs:(paragraphs||[]).slice(),
         title:title,
@@ -3576,11 +3507,6 @@ function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride
             updateChrome();
             syncBookmarkButton();
             saveCurrentProgress();
-
-            // V70: if the book began on the cover, the first real text spread
-            // becomes available only after a turn. Capture it then.
-            gfV70ScheduleRenderedLeafFill();
-
             if(performance.now()-lastGestureTime < 420){
               playFlipAccent(lastGestureSpeed);
             }
@@ -3675,35 +3601,32 @@ function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride
                   if(!folded){
                     var _capacity = _folioTop - _line - _paraTop;
                     if(_capacity > 100){
-                      // V69 TRUE VISIBLE COORDINATE AUTHORITY
+                      // V68 FROZEN PHYSICAL FLOOR
                       //
-                      // This is the exact physical body-text height available on
-                      // the rendered page:
+                      // V66 proved the FAST candidate branch is now active.
+                      // The remaining short floor came from this live refinement:
+                      // .folio participates in the sheet's flex flow, so its
+                      // measured top can move UP as page text grows. Replacing
+                      // the bootstrap capacity with that smaller moving value
+                      // creates a self-tightening floor.
                       //
-                      //   actual visible folio top
-                      //   - one rendered body line
-                      //   - actual visible paragraph top
-                      //
-                      // Unlike the bootstrap formula, there is no inferred
-                      // padding or inferred folio height in this number.
-                      gfV69VisibleCoordinateCapacity = _capacity;
+                      // Never allow the live flex measurement to reduce the
+                      // synchronous pre-pagination physical capacity. It may
+                      // only confirm it or increase it.
+                      var _authoritativeCapacity = Math.max(
+                        gfV68BootstrapTextCapacity || 0,
+                        gfUnfoldedPhysicalTextCapacity || 0,
+                        _capacity
+                      );
 
                       v64CapacityChanged =
-                        Math.abs(
-                          (gfUnfoldedPhysicalTextCapacity || 0) - _capacity
-                        ) > 2;
+                        !(gfUnfoldedPhysicalTextCapacity > 0) ||
+                        Math.abs(gfUnfoldedPhysicalTextCapacity - _authoritativeCapacity) > 2;
 
-                      // Once learned, this exact coordinate-derived capacity is
-                      // the unfolded Bible authority.
-                      gfUnfoldedPhysicalTextCapacity = _capacity;
-
-                      window.__gfDebug.v68BootstrapCapacity =
-                        gfV68BootstrapTextCapacity;
-                      window.__gfDebug.v69VisibleParaTop = _paraTop;
-                      window.__gfDebug.v69VisibleFolioTop = _folioTop;
-                      window.__gfDebug.v69VisibleLinePx = _line;
-                      window.__gfDebug.v69VisibleCoordinateCapacity = _capacity;
-                      window.__gfDebug.v64PhysicalTextCapacity = _capacity;
+                      gfUnfoldedPhysicalTextCapacity = _authoritativeCapacity;
+                      window.__gfDebug.v68BootstrapCapacity = gfV68BootstrapTextCapacity;
+                      window.__gfDebug.v68LiveFlexCapacity = _capacity;
+                      window.__gfDebug.v64PhysicalTextCapacity = _authoritativeCapacity;
                       window.__gfDebug.v64VisibleLinePx = _line;
                     }
                   }
@@ -3715,21 +3638,12 @@ function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride
             // still used the wrong hidden floor. When the live physical text
             // capacity is learned for the first time, force ONE rebuild so the
             // Bible's binary word search immediately uses it.
-            var needsV64CapacityRebuild =
-              !folded &&
-              v64CapacityChanged &&
-              !gfV64CapacityRebuildDone &&
-              gfUnfoldedPhysicalTextCapacity > 0;
+            // V73 fixed-box pagination has no post-render capacity loop.
+            // Rebuild only if the ACTUAL leaf dimensions themselves differ.
+            var needsV64CapacityRebuild = false;
 
-            var needsV69CoordinateRebuild =
-              !folded &&
-              !gfV69CoordinateRebuildDone &&
-              gfV69VisibleCoordinateCapacity > 0;
-
-            if(mismatch || needsV64CapacityRebuild || needsV69CoordinateRebuild){
+            if(mismatch){
               gfLiveLeafRebuildInFlight = true;
-              if(needsV64CapacityRebuild) gfV64CapacityRebuildDone = true;
-              if(needsV69CoordinateRebuild) gfV69CoordinateRebuildDone = true;
               gfPaginationPageW = liveW;
               gfPaginationPageH = liveH;
 
@@ -3781,7 +3695,7 @@ function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride
         if(!folded){
           var _v65 = document.createElement('div');
           _v65.id = 'gf-v65-marker';
-          _v65.textContent = 'V72 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
+          _v65.textContent = 'V73 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
           document.body.appendChild(_v65);
         }
       }catch(_v65MarkerErr){}
@@ -3798,9 +3712,6 @@ function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride
       if(!suppressProgressSave){
         restorePageAfterBuild();
       }
-
-      // V70: also attempt capture after the restored/current spread has painted.
-      gfV70ScheduleRenderedLeafFill();
     }
 
     function enlargePeelGrabZones(){
