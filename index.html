@@ -490,6 +490,25 @@ Third-party libraries remain subject to their own licenses.
     display:none!important;
   }
 
+
+  /* V63 TEMPORARY PAGE-CLOSE TRACER — unfolded only */
+  #gf-screen.gf-unfolded .gf-v63-close-tag{
+    position:absolute;
+    right:6px;
+    bottom:24px;
+    z-index:60;
+    max-width:44%;
+    padding:3px 5px;
+    border:1px solid rgba(120,0,0,.45);
+    border-radius:4px;
+    background:rgba(255,245,210,.92);
+    color:#7a0000;
+    font:700 8px/1.2 monospace;
+    letter-spacing:.01em;
+    text-transform:none;
+    pointer-events:none;
+  }
+  #gf-screen.gf-unfolded .sheet--text{ position:relative; }
 </style>
 <script>
 
@@ -844,6 +863,7 @@ Third-party libraries remain subject to their own licenses.
     var gfPaginationPageW = 0;
     var gfPaginationPageH = 0;
     var gfLiveLeafRebuildInFlight = false;
+    var gfV63PageCloseReasons = [];
 
     // V22 REMEMBERED LIVE GEOMETRY
     // Avoid the common "paginate once, discover the real Turn.js page box,
@@ -1610,7 +1630,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V62 direct unfolded physical folio floor';
+      window.__gfDebug.paginationModel = 'V63 unfolded page-close tracer';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -1646,6 +1666,7 @@ Third-party libraries remain subject to their own licenses.
       }
 
       var pages = [];
+      var pageCloseReasons = [];
       var pageParts = [];
       var usedH = 0;
       var firstPage = true;
@@ -1716,12 +1737,13 @@ Third-party libraries remain subject to their own licenses.
         return out;
       }
 
-      function flushPage(){
+      function flushPage(reason){
         if(!pageParts.length) return;
 
         var out = renderPageParts(pageParts, firstPage);
 
         pages.push(out);
+        pageCloseReasons.push(String(reason || 'UNLABELED FLUSH'));
         pageParts = [];
         usedH = 0;
         firstPage = false;
@@ -2217,7 +2239,12 @@ Third-party libraries remain subject to their own licenses.
 
           if(takeWords <= 0){
             if(pageParts.length){
-              flushPage();
+              flushPage(
+                'NO WORD FIT — realFit rejected next word | p=' + p +
+                ' | remaining=' + remaining.length +
+                ' | usedH=' + Math.round(usedH) +
+                ' | usableH=' + Math.round(usableH)
+              );
               continue;
             }
             // Empty page but not even one word fits due to an extreme
@@ -2268,13 +2295,20 @@ Third-party libraries remain subject to their own licenses.
             usedH = usableH;
             if(remaining.length){
               paragraphContinuation = true;
-              flushPage();
+              flushPage('FOLDED REMAINDER FLUSH');
             }
           }
         }
       }
 
-      flushPage();
+      flushPage('END OF SOURCE');
+
+      // V63: Bible bypasses the later packers, so these reasons should remain
+      // aligned one-to-one with the finished Bible pageBlocks. Ordinary books
+      // may be repacked later; tracer is intended for the Bible debugging path.
+      gfV63PageCloseReasons = pageCloseReasons.slice();
+      window.__gfDebug = window.__gfDebug || {};
+      window.__gfDebug.v63PageCloseReasons = gfV63PageCloseReasons.slice();
 
       // Existing continuation-aware pack remains useful for speed/structure.
       pages = finalPackPages(pages);
@@ -2318,8 +2352,13 @@ Third-party libraries remain subject to their own licenses.
       // Turn page 1 is the cover. Therefore content folio 1 is Turn page 2
       // (the left leaf), folio 2 is the right leaf, and so on.
       var sideClass = (folioNum % 2) ? ' gf-page-left' : ' gf-page-right';
+      var v63Tag = '';
+      if(!folded && gfV63PageCloseReasons && gfV63PageCloseReasons[folioNum-1]){
+        v63Tag = '<div class="gf-v63-close-tag">P'+folioNum+' · '+
+          escapeHtml(gfV63PageCloseReasons[folioNum-1])+'</div>';
+      }
       return '<div class="tpage'+sideClass+'"><div class="sheet sheet--text"><div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
-        '<div class="para">'+paraBlockHtml+'</div><div class="folio">'+folioNum+'</div></div></div>';
+        '<div class="para">'+paraBlockHtml+'</div>'+v63Tag+'<div class="folio">'+folioNum+'</div></div></div>';
     }
 
     // ---------- Bible navigation ----------
@@ -2627,7 +2666,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v62-direct-physical-folio-floor',
+        'v63-page-close-tracer',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
