@@ -489,35 +489,6 @@ Third-party libraries remain subject to their own licenses.
   body:not(.gf-reading-full) #gf-apple-toolbar-handle{
     display:none!important;
   }
-
-
-  /* V63 TEMPORARY PAGE-CLOSE TRACER — unfolded only */
-  #gf-screen.gf-unfolded .gf-v63-close-tag{
-    position:absolute;
-    right:6px;
-    bottom:24px;
-    z-index:60;
-    max-width:44%;
-    padding:3px 5px;
-    border:1px solid rgba(120,0,0,.45);
-    border-radius:4px;
-    background:rgba(255,245,210,.92);
-    color:#7a0000;
-    font:700 8px/1.2 monospace;
-    letter-spacing:.01em;
-    text-transform:none;
-    pointer-events:none;
-  }
-  #gf-screen.gf-unfolded .sheet--text{ position:relative; }
-
-  #gf-v65-marker{
-    position:fixed;left:8px;top:8px;z-index:2147482600;
-    padding:4px 7px;border-radius:5px;
-    background:#7a0000;color:#fff;
-    font:800 11px/1.1 monospace;
-    letter-spacing:.04em;
-    pointer-events:none;
-  }
 </style>
 <script>
 
@@ -1069,6 +1040,102 @@ Third-party libraries remain subject to their own licenses.
       return lo;
     }
 
+
+    // V74 FRESH CHAPTER PAGES
+    // This marker exists only inside pagination input; it is never rendered.
+    var GF_CHAPTER_BREAK = '[[GFCHAPTERBREAK]]';
+    var gfChapterBreaksActive = false;
+
+    function gfIsChapterBreakMarker(text){
+      return String(text || '').trim() === GF_CHAPTER_BREAK;
+    }
+
+    function gfLooksLikeChapterHeading(text){
+      var t = String(text || '').replace(/\s+/g,' ').trim();
+      if(!t || t.length > 120) return false;
+
+      // Plain-text / DOCX / PDF chapter conventions.
+      if(/^(?:chapter|chap\.?)\s+(?:\d{1,4}|[ivxlcdm]{1,12}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\b|[\s:.\-—])/i.test(t)){
+        return true;
+      }
+      if(/^(?:prologue|epilogue)\b/i.test(t)) return true;
+
+      // EPUB heading metadata: accept major H1/H2 headings, plus compact
+      // numeric/Roman headings commonly used by novels ("I", "12", etc.).
+      try{
+        if(typeof pendingEpubHeadingMeta !== 'undefined' &&
+           pendingEpubHeadingMeta && pendingEpubHeadingMeta.length){
+          for(var i=0;i<pendingEpubHeadingMeta.length;i++){
+            var h = pendingEpubHeadingMeta[i];
+            if(!h || String(h.text || '').replace(/\s+/g,' ').trim() !== t) continue;
+            var level = Number(h.level) || 6;
+            if(level <= 2) return true;
+            if(/^(?:\d{1,4}|[ivxlcdm]{1,12})[.:]?$/i.test(t)) return true;
+          }
+        }
+      }catch(_gfChapterMetaErr){}
+
+      return false;
+    }
+
+    function gfPrepareChapterBreakParagraphs(input){
+      var source = (input || []).slice();
+      var out = [];
+      var inserted = 0;
+      var bibleMode = !!(
+        typeof pendingBibleBooks !== 'undefined' &&
+        pendingBibleBooks &&
+        pendingBibleBooks.length
+      );
+
+      for(var i=0;i<source.length;i++){
+        var raw = String(source[i] || '').replace(/\s+/g,' ').trim();
+        if(!raw) continue;
+
+        if(bibleMode){
+          // Bible chapters can start in the MIDDLE of an extracted paragraph,
+          // e.g. "...1:31 ... 2:1 Thus the heavens...". Split exactly before
+          // every verse-1 reference so the chapter can truly start at page top.
+          var re = /\b\d{1,3}:1\b/g;
+          var matches = [];
+          var m;
+          while((m = re.exec(raw)) !== null){
+            matches.push(m.index);
+          }
+
+          if(matches.length){
+            var cursor = 0;
+            for(var mi=0;mi<matches.length;mi++){
+              var pos = matches[mi];
+              var before = raw.slice(cursor, pos).trim();
+              if(before) out.push(before);
+
+              out.push(GF_CHAPTER_BREAK);
+              inserted++;
+
+              var next = (mi + 1 < matches.length) ? matches[mi+1] : raw.length;
+              var chapterPart = raw.slice(pos, next).trim();
+              if(chapterPart) out.push(chapterPart);
+              cursor = next;
+            }
+            var tail = raw.slice(cursor).trim();
+            if(tail) out.push(tail);
+            continue;
+          }
+        }else if(gfLooksLikeChapterHeading(raw)){
+          out.push(GF_CHAPTER_BREAK);
+          inserted++;
+        }
+
+        out.push(raw);
+      }
+
+      gfChapterBreaksActive = inserted > 0;
+      window.__gfDebug = window.__gfDebug || {};
+      window.__gfDebug.v74ChapterBreakCount = inserted;
+      return out;
+    }
+
     function paginateParagraphsMeasured(paragraphs, chapterLabel){
       gfV65PaginatorOrigin = 'MEASURED';
       paragraphs = paragraphs.slice();
@@ -1085,6 +1152,16 @@ Third-party libraries remain subject to their own licenses.
         while(pIdx < paragraphs.length){
           guard++;
           var raw = paragraphs[pIdx];
+
+          if(gfIsChapterBreakMarker(raw)){
+            pIdx++;
+            // If this page already contains text, finish it now. The next
+            // outer pass starts the chapter at the top of a fresh page.
+            if(addedAny) break;
+            // A marker at the very beginning should not create a blank page.
+            continue;
+          }
+
           var words = raw.split(/\s+/).filter(Boolean);
           var dropcapHere = isFirstPage && !addedAny;
           var wrapped = wrapParagraphHtml(raw, dropcapHere);
@@ -1111,7 +1188,7 @@ Third-party libraries remain subject to their own licenses.
           break;
         }
 
-        pages.push(htmlSoFar);
+        if(htmlSoFar) pages.push(htmlSoFar);
         isFirstPage = false;
       }
 
@@ -1125,6 +1202,7 @@ Third-party libraries remain subject to their own licenses.
     // inside the actual browser-measured .para box.
     function enforceHardPhysicalFit(inputPages){
       if(folded) return inputPages;
+      if(gfChapterBreaksActive) return inputPages;
 
       // V48: Never run the expensive whole-book DOM audit on Bible pagination.
       // Bible pages already go through the structured verse pagination path,
@@ -1712,7 +1790,7 @@ Third-party libraries remain subject to their own licenses.
       window.__gfDebug.folded = folded;
       window.__gfDebug.fontScale = fontScale;
       window.__gfDebug.calLabel = calLabel;
-      window.__gfDebug.paginationModel = 'V73 fixed physical text box';
+      window.__gfDebug.paginationModel = 'V74 fixed physical box + fresh chapter pages';
 
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -2122,6 +2200,7 @@ Third-party libraries remain subject to their own licenses.
       // untouched because illustrated EPUB text runs are packed independently.
       function finalPackPages(inputPages){
         if(folded) return inputPages;
+        if(gfChapterBreaksActive) return inputPages;
         if(typeof pendingBibleBooks !== 'undefined' && pendingBibleBooks.length) return inputPages;
         if(!inputPages || inputPages.length < 2) return inputPages;
 
@@ -2323,6 +2402,15 @@ Third-party libraries remain subject to their own licenses.
       for(var p=0;p<paragraphs.length;p++){
         var raw = String(paragraphs[p] || '').trim();
         if(!raw) continue;
+
+        if(gfIsChapterBreakMarker(raw)){
+          // Finish the preceding page, but never create an empty page when a
+          // chapter marker appears at the start of the book/run.
+          if(pageParts.length){
+            flushPage('CHAPTER BREAK');
+          }
+          continue;
+        }
 
         var words = raw.split(/\s+/).filter(Boolean);
         if(!words.length) continue;
@@ -2580,17 +2668,8 @@ Third-party libraries remain subject to their own licenses.
       // Turn page 1 is the cover. Therefore content folio 1 is Turn page 2
       // (the left leaf), folio 2 is the right leaf, and so on.
       var sideClass = (folioNum % 2) ? ' gf-page-left' : ' gf-page-right';
-      var v63Tag = '';
-      if(!folded){
-        var _reason = (gfV63PageCloseReasons && gfV63PageCloseReasons[folioNum-1])
-          ? gfV63PageCloseReasons[folioNum-1]
-          : 'NO CLOSE REASON RECORDED';
-        v63Tag = '<div class="gf-v63-close-tag">'+
-          'V73 · ORIGIN='+escapeHtml(gfV65PaginatorOrigin || 'UNKNOWN')+
-          ' · P'+folioNum+' · '+escapeHtml(_reason)+'</div>';
-      }
       return '<div class="tpage'+sideClass+'"><div class="sheet sheet--text"><div class="running-head">'+escapeHtml(chapterLabel)+'</div>' +
-        '<div class="para">'+paraBlockHtml+'</div>'+v63Tag+'<div class="folio">'+folioNum+'</div></div></div>';
+        '<div class="para">'+paraBlockHtml+'</div><div class="folio">'+folioNum+'</div></div></div>';
     }
 
     // ---------- Bible navigation ----------
@@ -2899,7 +2978,7 @@ Third-party libraries remain subject to their own licenses.
     function renderCacheSignature(){
       var pg = paginationPageSize();
       return [
-        'v73-fixed-physical-text-box',
+        'v74-chapter-fresh-pages',
         Math.round(pg.w || 0),
         Math.round(pg.h || 0),
         folded ? 'single' : 'double',
@@ -3375,6 +3454,7 @@ Third-party libraries remain subject to their own licenses.
       lazyGeneralNav = null;
       lazyGeneralNavSource = null;
       paragraphs = (paragraphs||[]).map(function(p){ return p.replace(/\s+/g,' ').trim(); }).filter(Boolean);
+      paragraphs = gfPrepareChapterBreakParagraphs(paragraphs);
       if(paragraphs.length === 0){
         showLoadError('That file did not contain any readable text.');
         return;
@@ -3689,18 +3769,7 @@ Third-party libraries remain subject to their own licenses.
         }, 140);
       }
 
-      try{
-        var _oldV65 = document.getElementById('gf-v65-marker');
-        if(_oldV65) _oldV65.remove();
-        if(!folded){
-          var _v65 = document.createElement('div');
-          _v65.id = 'gf-v65-marker';
-          _v65.textContent = 'V73 · '+String(gfV65PaginatorOrigin || 'UNKNOWN');
-          document.body.appendChild(_v65);
-        }
-      }catch(_v65MarkerErr){}
-
-      bookTitle = title;
+            bookTitle = title;
       sizeDevice(folded ? FOLDED_W : UNFOLDED_W, folded ? FOLDED_H : UNFOLDED_H);
       enlargePeelGrabZones();
       updateChrome();
