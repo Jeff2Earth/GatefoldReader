@@ -150,7 +150,7 @@ Third-party libraries remain subject to their own licenses.
       <button id="gf-toolbar-fold" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Fold</button>
       <button id="gf-toolbar-sound" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Sound</button>
       <button id="gf-fullscreen-btn" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Fullscreen</button>
-      <button id="gf-toolbar-debug" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Debug</button>
+      
     </div>
   </div>
 
@@ -621,7 +621,7 @@ Third-party libraries remain subject to their own licenses.
 
       // Auto always owns the fullscreen reader shell.
       readingMode = true;
-      document.body.classList.add('gf-reading-full');
+      if(readingMode){ document.body.classList.add('gf-reading-full'); }
 
       if(desiredFolded === folded) return false;
 
@@ -5255,7 +5255,7 @@ Third-party libraries remain subject to their own licenses.
     var lineSpacingSelect = document.getElementById('gf-line-spacing');
     var pageMarginsSelect = document.getElementById('gf-page-margins');
 
-    var readingMode = true;
+    var readingMode = false;
     var fontScale = 1;
 
     // Font changes can rebuild hundreds/thousands of pages. Do not allow rapid
