@@ -150,7 +150,7 @@ Third-party libraries remain subject to their own licenses.
       <button id="gf-toolbar-fold" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Fold</button>
       <button id="gf-toolbar-sound" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Sound</button>
       <button id="gf-fullscreen-btn" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Fullscreen</button>
-      
+      <button id="gf-toolbar-debug" type="button" style="padding:8px 11px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:var(--gilt);">Debug</button>
     </div>
   </div>
 
@@ -845,7 +845,7 @@ Third-party libraries remain subject to their own licenses.
     var gfLiveLeafRebuildInFlight = false;
     var gfV63PageCloseReasons = [];
     var gfV65PaginatorOrigin = 'UNKNOWN';
-    var gfV65BuildMarker = 'V75';
+    var gfV65BuildMarker = 'V73';
     // V64: authoritative unfolded body-text capacity learned from the visible leaf.
     // This is the vertical distance from .para top to exactly one rendered line
     // above the ACTUAL visible folio.
@@ -854,10 +854,10 @@ Third-party libraries remain subject to their own licenses.
     // can move upward as text grows, so a later live reading must never shrink
     // the floor below this bootstrap value.
     var gfV68BootstrapTextCapacity = 0;
-    // V75 fixed-box diagnostics only; no post-render calibration loop.
-    var gfV75FixedBoxCapacity = 0;
-    var gfV75FixedBoxTop = 0;
-    var gfV75FixedBoxWidth = 0;
+    // V73 fixed-box diagnostics only; no post-render calibration loop.
+    var gfV73FixedBoxCapacity = 0;
+    var gfV73FixedBoxTop = 0;
+    var gfV73FixedBoxWidth = 0;
     var gfV64CapacityRebuildDone = false;
 
     // V22 REMEMBERED LIVE GEOMETRY
@@ -1041,7 +1041,7 @@ Third-party libraries remain subject to their own licenses.
     }
 
 
-    // V75 FRESH CHAPTER PAGES + INDEX REBUILD
+    // V74 FRESH CHAPTER PAGES
     // This marker exists only inside pagination input; it is never rendered.
     var GF_CHAPTER_BREAK = '[[GFCHAPTERBREAK]]';
     var gfChapterBreaksActive = false;
@@ -1434,7 +1434,7 @@ Third-party libraries remain subject to their own licenses.
       pages = pages.filter(hasText);
 
       window.__gfDebug = window.__gfDebug || {};
-      window.__gfDebug.v65Build = 'V75';
+      window.__gfDebug.v65Build = 'V73';
       window.__gfDebug.v65PaginatorOrigin = gfV65PaginatorOrigin;
       window.__gfDebug.hardPhysicalFit = 'V45 rendered-page overflow correction + pull-forward';
       window.__gfDebug.hardPhysicalFitGuard = guard;
@@ -1918,7 +1918,7 @@ Third-party libraries remain subject to their own licenses.
       }
 
 
-      // V75 DEVICE-INDEPENDENT FIXED PHYSICAL TEXT BOX
+      // V73 DEVICE-INDEPENDENT FIXED PHYSICAL TEXT BOX
       //
       // The unfolded FAST paginator no longer asks a flexbox page where its
       // text floor is. Instead it defines the body rectangle explicitly from
@@ -1938,7 +1938,7 @@ Third-party libraries remain subject to their own licenses.
       // Pixel Fold, OnePlus Open, tablets, rotation, font size, and margins.
       //
       // Critically, the .para below is NOT a flex item. Its height is fixed.
-      function gfV75FixedPhysicalMeasure(pageHtml){
+      function gfV73FixedPhysicalMeasure(pageHtml){
         var root = document.querySelector('.gf-root') || document.body;
         var shell = document.createElement('div');
         shell.className = 'sheet sheet--text';
@@ -2023,9 +2023,9 @@ Third-party libraries remain subject to their own licenses.
 
         var fits = !last || used <= bodyHeight + 1;
 
-        gfV75FixedBoxCapacity = bodyHeight;
-        gfV75FixedBoxTop = bodyTop;
-        gfV75FixedBoxWidth = bodyWidth;
+        gfV73FixedBoxCapacity = bodyHeight;
+        gfV73FixedBoxTop = bodyTop;
+        gfV73FixedBoxWidth = bodyWidth;
 
         window.__gfDebug = window.__gfDebug || {};
         window.__gfDebug.v73BoxTop = bodyTop;
@@ -2048,10 +2048,10 @@ Third-party libraries remain subject to their own licenses.
       }
 
       function realFitMeasure(existingHtml, candidateHtml){
-        // V75: Every unfolded FAST-page decision uses the same explicit
+        // V73: Every unfolded FAST-page decision uses the same explicit
         // physical rectangle. Folded/cover retains its proven V53 path.
         if(!folded){
-          return gfV75FixedPhysicalMeasure(
+          return gfV73FixedPhysicalMeasure(
             String(existingHtml || '') + String(candidateHtml || '')
           );
         }
@@ -2393,7 +2393,7 @@ Third-party libraries remain subject to their own licenses.
       function realFitCandidateWords(words, paraId, isContinuation){
         var c = candidateHtmlForRemaining(words, paraId, isContinuation);
 
-        // V75: realFitCheck() now means "does this exact rendered candidate
+        // V73: realFitCheck() now means "does this exact rendered candidate
         // stay inside the fixed physical body rectangle?" in unfolded mode.
         // No flex floor, moving folio, live-cap callback, or Bible gate.
         return realFitCheck(c.html, '');
@@ -2551,12 +2551,12 @@ Third-party libraries remain subject to their own licenses.
           if(takeWords <= 0){
             if(pageParts.length){
               flushPage(
-                'V75 NO WORD FIT — candidate rejected | p=' + p +
+                'V73 NO WORD FIT — candidate rejected | p=' + p +
                 ' | remaining=' + remaining.length +
                 ' | usedH=' + Math.round(usedH) +
                 ' | usableH=' + Math.round(usableH) +
-                ' | boxCap=' + Math.round(gfV75FixedBoxCapacity || 0) +
-                ' | boxTop=' + Math.round(gfV75FixedBoxTop || 0)
+                ' | boxCap=' + Math.round(gfV73FixedBoxCapacity || 0) +
+                ' | boxTop=' + Math.round(gfV73FixedBoxTop || 0)
               );
               continue;
             }
@@ -3718,7 +3718,7 @@ Third-party libraries remain subject to their own licenses.
             // still used the wrong hidden floor. When the live physical text
             // capacity is learned for the first time, force ONE rebuild so the
             // Bible's binary word search immediately uses it.
-            // V75 fixed-box pagination has no post-render capacity loop.
+            // V73 fixed-box pagination has no post-render capacity loop.
             // Rebuild only if the ACTUAL leaf dimensions themselves differ.
             var needsV64CapacityRebuild = false;
 
