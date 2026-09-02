@@ -3517,7 +3517,7 @@ Third-party libraries remain subject to their own licenses.
       // The parsed source lets new font sizes skip EPUB/PDF/DOCX parsing.
       // The render variant lets previously-used font/layout combinations skip
       // pagination entirely.
-      if(currentBookId && title !== 'Loading your book…'){
+      if(currentBookId && title !== 'Opening your book…'){
         var parsedSourceForCache = {
           title:title,
           author:author || '',
@@ -3870,8 +3870,8 @@ Third-party libraries remain subject to their own licenses.
 
     if(hasRememberedBookAtStartup){
       buildBookFromParagraphs(
-        ['Loading your book…'],
-        'Loading your book…',
+        ['Opening your book…'],
+        'Opening your book…',
         '',
         ''
       );
