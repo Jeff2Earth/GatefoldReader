@@ -22,59 +22,10 @@ Third-party libraries remain subject to their own licenses.
 </script>
 
 
-<div id="gf-splash-screen">
-  <img src="assets/splash.png" onerror="this.style.display='none'">
-  <div id="gf-splash-title">
-    <h1>Classic Reading - Reimagined</h1>
-    <p>Gatefold Reader<br>Designed by Jeff Patrick</p>
-  </div>
 </div>
 
 
-<style id="gf-splash-style">
-#gf-splash-screen{
-  position:fixed;
-  inset:0;
-  z-index:2147483647;
-  background:#0B0D18;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  overflow:hidden;
-  animation:gfSplashOut 1s ease 5s forwards;
-}
-#gf-splash-screen img{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  animation:gfSplashZoom 6s ease forwards;
-}
-#gf-splash-title{
-  position:absolute;
-  text-align:center;
-  color:#C6A15B;
-  font-family:Georgia,serif;
-  letter-spacing:.12em;
-  text-transform:uppercase;
-  text-shadow:0 3px 15px #000;
-}
-#gf-splash-title h1{
-  font-size:clamp(24px,5vw,42px);
-  margin:0 0 18px;
-}
-#gf-splash-title p{
-  margin:0;
-  color:#eee7d5;
-  font-size:clamp(12px,2vw,16px);
-}
-@keyframes gfSplashZoom{
-  from{transform:scale(1)}
-  to{transform:scale(1.08)}
-}
-@keyframes gfSplashOut{
-  to{opacity:0;pointer-events:none;visibility:hidden}
-}
-</style>
+
 
 <div class="gf-root" style="
   --ink:#2B2620; --ink-soft:rgba(43,38,32,.58);
