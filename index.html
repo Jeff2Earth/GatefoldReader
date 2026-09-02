@@ -6713,3 +6713,23 @@ Third-party libraries remain subject to their own licenses.
 })();
 
   </script>
+
+<!-- Gatefold Reader V74 Intro Sequence -->
+<style>
+#gf-intro{position:fixed;inset:0;z-index:999999;background:#0b0d18;display:flex;align-items:center;justify-content:center;overflow:hidden;transition:opacity .8s ease}
+#gf-intro.fade-out{opacity:0;pointer-events:none}
+#gf-intro img{position:absolute;width:min(92vw,92vh * 1.333);aspect-ratio:4/3;object-fit:cover;opacity:0;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.65);animation:gfIntroPage 4.8s ease forwards}
+#gf-intro img:nth-child(2){animation-delay:4.8s}
+@keyframes gfIntroPage{0%{opacity:0;transform:scale(.96)}12%{opacity:1;transform:scale(1)}82%{opacity:1}100%{opacity:0;transform:scale(1.02)}}
+</style>
+<div id="gf-intro">
+<img src="./assets/intro_page1.jpg" alt="Classic Reading Reimagined">
+<img src="./assets/intro_page2.jpg" alt="Gatefold Reader">
+</div>
+<script>
+(function(){
+var intro=document.getElementById("gf-intro");
+if(!intro)return;
+setTimeout(function(){intro.classList.add("fade-out");setTimeout(function(){intro.remove()},900)},9500);
+})();
+  </script>
