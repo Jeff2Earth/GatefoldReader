@@ -6713,30 +6713,3 @@ Third-party libraries remain subject to their own licenses.
 })();
 
   </script>
-
-<script>
-/* V74 PAGE IDENTITY LOCK EXPERIMENT
-   Passive test layer only.
-   Does not alter startup, loading, pagination, fullscreen, or fold detection.
-*/
-(function(){
-  window.__gfPageIdentityLock = {
-    enabled: true,
-    version: "experiment-1",
-    lastPage: null
-  };
-
-  function rememberPage(){
-    try{
-      var folio = document.querySelector(".folio");
-      if(folio){
-        window.__gfPageIdentityLock.lastPage =
-          parseInt(folio.textContent,10) || null;
-      }
-    }catch(e){}
-  }
-
-  window.addEventListener("resize", rememberPage, {passive:true});
-  document.addEventListener("visibilitychange", rememberPage);
-})();
-  </script>
