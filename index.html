@@ -6730,6 +6730,37 @@ Third-party libraries remain subject to their own licenses.
 (function(){
 var intro=document.getElementById("gf-intro");
 if(!intro)return;
-setTimeout(function(){intro.classList.add("fade-out");setTimeout(function(){intro.remove()},900)},9500);
+
+var imgs=intro.querySelectorAll("img");
+var loaded=0;
+
+function begin(){
+  intro.classList.add("ready");
+
+  setTimeout(function(){
+    intro.classList.add("fade-out");
+    setTimeout(function(){
+      intro.remove();
+    },900);
+  },9600);
+}
+
+imgs.forEach(function(img){
+  if(img.complete){
+    loaded++;
+  } else {
+    img.onload=function(){
+      loaded++;
+      if(loaded===imgs.length) begin();
+    };
+    img.onerror=function(){
+      loaded++;
+      if(loaded===imgs.length) begin();
+    };
+  }
+});
+
+if(loaded===imgs.length) begin();
+
 })();
-  </script>
+</script>
