@@ -6697,29 +6697,28 @@ Third-party libraries remain subject to their own licenses.
       if(document.visibilityState === 'hidden'){
         saveCurrentProgress();
         saveAppSettings();
-        try{ sessionStorage.setItem('gfBackgrounded','1'); }catch(e){}
-      }else if(document.visibilityState === 'visible'){
-        // V74 background resume patch:
-        // If the PWA was only suspended (not closed), keep the live Turn.js
-        // instance and return to the exact page instead of rebuilding from page 1.
-        try{
-          if(sessionStorage.getItem('gfBackgrounded') === '1'){
-            sessionStorage.removeItem('gfBackgrounded');
-            if(flipEl && flipEl.turn){
-              var livePage = flipEl.turn('page');
-              if(livePage){
-                setTimeout(function(){
-                  try{
-                    flipEl.turn('page', livePage);
-                    updateChrome();
-                  }catch(e){}
-                },50);
-              }
-            }
-          }
-        }catch(e){}
       }
     });
+
+    // V74 background resume guard. Android can restore a PWA into a new JS
+    // session after it has been sitting in the background. Force a saved-book
+    // restore when the page becomes active again instead of leaving the demo
+    // opening page in place.
+    window.addEventListener('pageshow', function(){
+      setTimeout(function(){
+        try{
+          if(localStorage.getItem(LAST_BOOK_KEY)){
+            restoreLastBook();
+          }
+        }catch(e){}
+      }, 80);
+    });
+
+    // Keep the last page warm even if Android suspends without firing a final
+    // close event.
+    setInterval(function(){
+      try{ saveCurrentProgress(); }catch(e){}
+    }, 3000);
 
     // PWA service worker.
     if('serviceWorker' in navigator){
@@ -6786,4 +6785,4 @@ imgs.forEach(function(img){
 if(loaded===imgs.length) begin();
 
 })();
-  </script>
+</script>
