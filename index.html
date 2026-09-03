@@ -1,7 +1,7 @@
 
 <div id="gf-intro">
-<img id="gf-intro-one" src="./assets/intro_page1.jpg" alt="Classic Reading Reimagined">
-<img id="gf-intro-two" loading="lazy" src="./assets/intro_page2.jpg" alt="Gatefold Reader">
+<img src="./assets/intro_page1.jpg" alt="Classic Reading Reimagined">
+<img src="./assets/intro_page2.jpg" alt="Gatefold Reader">
 </div>
 <!--
 Gatefold Reader
@@ -3300,7 +3300,21 @@ Third-party libraries remain subject to their own licenses.
           updateChrome();
           syncBookmarkButton();
         }catch(e){}
-      }, 140);
+      }, 500);
+      // Extra retry after Turn.js finishes layout on slower devices.
+      setTimeout(function(){
+        try{
+          var total2 = flipEl.turn('pages');
+          var target2 = Number(saved.page) || 1;
+          if(saved.pages && total2 && Number(saved.pages) !== Number(total2) && isFinite(saved.ratio)){
+            target2 = 1 + Math.round(Math.max(0,Math.min(1,Number(saved.ratio))) * Math.max(0,total2-1));
+          }
+          target2 = Math.max(1,Math.min(total2,target2));
+          flipEl.turn('page',target2);
+          updateChrome();
+          syncBookmarkButton();
+        }catch(e){}
+      }, 1200);
     }
 
     function restoreLastBook(){
