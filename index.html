@@ -1,9 +1,28 @@
-
+<script>
+// Decide before the intro markup is painted; activity survives app restarts.
+(function(){
+  var key='gatefold.lastActiveAt.v1', now=Date.now(), previous=0;
+  window.gfQuickResume=false;
+  try{
+    previous=Number(localStorage.getItem(key)) || 0;
+    window.gfQuickResume=!!localStorage.getItem('gatefold.lastBookId.v3') &&
+      previous>0 && now>=previous && now-previous<15*60*1000;
+  }catch(e){}
+  if(window.gfQuickResume) document.documentElement.classList.add('gf-quick-resume');
+  function touch(){try{localStorage.setItem(key,String(Date.now()));}catch(e){}}
+  touch();
+  setInterval(function(){if(document.visibilityState==='visible') touch();},10000);
+  document.addEventListener('visibilitychange',touch);
+  window.addEventListener('pagehide',touch);
+  window.addEventListener('pageshow',touch);
+})();
+</script>
+<style>.gf-quick-resume #gf-intro{display:none!important}</style>
 <div id="gf-intro">
 <img src="./assets/intro_page1.jpg" alt="Classic Reading Reimagined">
 <img src="./assets/intro_page2.jpg" alt="Gatefold Reader">
 </div>
-<audio id="gf-intro-audio" preload="none"><source src="./assets/intro.mp3" type="audio/mpeg"></audio>
+<audio id="gf-intro-audio" preload="auto"><source src="./assets/intro.mp3" type="audio/mpeg"></audio>
 <!--
 Gatefold Reader
 Copyright © 2026. All rights reserved.
@@ -6734,66 +6753,76 @@ Third-party libraries remain subject to their own licenses.
 
   </script>
 
-<!-- Gatefold Reader V74 Intro Sequence -->
+<!-- Gatefold Reader: synchronized launch sequence and quick resume -->
 <style>
 #gf-intro{position:fixed;inset:0;z-index:999999;background:#0b0d18;display:flex;align-items:center;justify-content:center;overflow:hidden;transition:opacity .8s ease}
 #gf-intro.fade-out{opacity:0;pointer-events:none}
-#gf-intro img{position:absolute;width:min(92vw,92vh * 1.333);aspect-ratio:4/3;object-fit:cover;opacity:0;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.65);animation:gfIntroPage 4.8s ease forwards}
-#gf-intro img:nth-child(2){animation-delay:4.8s}
+#gf-intro img{position:absolute;width:min(92vw,92vh * 1.333);aspect-ratio:4/3;object-fit:cover;opacity:0;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.65)}
+#gf-intro.ready img{animation:gfIntroPage 4.8s ease forwards}
+#gf-intro.ready img:nth-child(2){animation-delay:4.8s}
+#gf-intro-sound{position:absolute;bottom:7%;z-index:1;padding:12px 20px;border:1px solid #ffffff66;border-radius:24px;background:#0b0d18;color:white;font:inherit;cursor:pointer}
 @keyframes gfIntroPage{0%{opacity:0;transform:scale(.96)}12%{opacity:1;transform:scale(1)}82%{opacity:1}100%{opacity:0;transform:scale(1.02)}}
 </style>
-
-<script>
+<script id="gf-intro-sequence">
 (function(){
-var intro=document.getElementById("gf-intro");
-if(!intro)return;
-
-var imgs=intro.querySelectorAll("img");
-var loaded=0;
-
-function begin(){
-  intro.classList.add("ready");
-
-  setTimeout(function(){
-    intro.classList.add("fade-out");
-    setTimeout(function(){
-      intro.remove();
-    },900);
-  },9600);
-}
-
-imgs.forEach(function(img){
-  if(img.complete){
-    loaded++;
-  } else {
-    img.onload=function(){
-      loaded++;
-      if(loaded===imgs.length) begin();
-    };
-    img.onerror=function(){
-      loaded++;
-      if(loaded===imgs.length) begin();
-    };
+  var intro=document.getElementById('gf-intro');
+  var audio=document.getElementById('gf-intro-audio');
+  if(!intro) return;
+  if(window.gfQuickResume){intro.remove();return;}
+  var imgs=intro.querySelectorAll('img');
+  var started=false, secondVisible=false, finished=false, playing=false, pending=false;
+  var soundButton=document.createElement('button');
+  soundButton.id='gf-intro-sound';
+  soundButton.type='button';
+  soundButton.textContent='Tap for sound';
+  soundButton.hidden=true;
+  intro.appendChild(soundButton);
+  function playSound(){
+    if(!audio || !secondVisible || finished || playing || pending) return;
+    pending=true;
+    audio.volume=0.35;
+    try{
+      var attempt=audio.play();
+      Promise.resolve(attempt).then(function(){
+        pending=false;playing=true;soundButton.hidden=true;
+      }).catch(function(){
+        pending=false;
+        if(!finished) soundButton.hidden=false;
+      });
+    }catch(e){pending=false;soundButton.hidden=false;}
   }
-});
-
-if(loaded===imgs.length) begin();
-
-})();
-  </script>
-
-
-<script id="gf-intro-audio-script">
-(function(){
-  function startGatefoldIntroAudio(){
-    var a=document.getElementById('gf-intro-audio');
-    if(!a) return;
-    a.volume=0.35;
-    a.currentTime=0;
-    a.play().catch(function(){});
+  soundButton.addEventListener('click',playSound);
+  intro.addEventListener('pointerup',playSound);
+  function finish(){
+    if(finished) return;
+    finished=true;
+    soundButton.hidden=true;
+    intro.classList.add('fade-out');
+    setTimeout(function(){intro.remove();},900);
   }
-  window.addEventListener('load',function(){
-    setTimeout(startGatefoldIntroAudio,900);
+  imgs[1].addEventListener('animationstart',function(event){
+    if(event.animationName!=='gfIntroPage') return;
+    secondVisible=true;
+    playSound();
   });
+  imgs[1].addEventListener('animationend',finish);
+  function begin(){
+    if(started) return;
+    started=true;
+    intro.classList.add('ready');
+    // Safety cleanup if a browser does not dispatch animation events.
+    setTimeout(finish,10600);
+  }
+  var loaded=0;
+  function ready(){loaded++;if(loaded===imgs.length) begin();}
+  imgs.forEach(function(img){
+    if(img.complete) ready();
+    else{
+      img.addEventListener('load',ready,{once:true});
+      img.addEventListener('error',ready,{once:true});
+    }
+  });
+  // A stalled image request must not prevent access to the reader.
+  setTimeout(begin,5000);
 })();
   </script>
