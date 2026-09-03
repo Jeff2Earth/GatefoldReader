@@ -6700,26 +6700,6 @@ Third-party libraries remain subject to their own licenses.
       }
     });
 
-    // V74 background resume guard. Android can restore a PWA into a new JS
-    // session after it has been sitting in the background. Force a saved-book
-    // restore when the page becomes active again instead of leaving the demo
-    // opening page in place.
-    window.addEventListener('pageshow', function(){
-      setTimeout(function(){
-        try{
-          if(localStorage.getItem(LAST_BOOK_KEY)){
-            restoreLastBook();
-          }
-        }catch(e){}
-      }, 80);
-    });
-
-    // Keep the last page warm even if Android suspends without firing a final
-    // close event.
-    setInterval(function(){
-      try{ saveCurrentProgress(); }catch(e){}
-    }, 3000);
-
     // PWA service worker.
     if('serviceWorker' in navigator){
       window.addEventListener('load', function(){
@@ -6785,4 +6765,4 @@ imgs.forEach(function(img){
 if(loaded===imgs.length) begin();
 
 })();
-</script>
+  </script>
