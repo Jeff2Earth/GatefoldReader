@@ -2968,6 +2968,7 @@ Third-party libraries remain subject to their own licenses.
     // reopen EPUB/PDF/DOCX/TXT automatically after the app is closed.
     var currentBookId = '';
     var pendingRestoreProgress = null;
+    var gfRestoreLockUntil = 0;
 
     // V22 SPEED RACER CACHE
     // One book can retain multiple finished paginations (font sizes/layouts).
@@ -3297,6 +3298,7 @@ Third-party libraries remain subject to their own licenses.
 
           target = Math.max(1,Math.min(total,target));
           flipEl.turn('page',target);
+          gfRestoreLockUntil = Date.now() + 2500;
           updateChrome();
           syncBookmarkButton();
           // Ensure restored/newly opened books immediately retain their position.
@@ -3314,7 +3316,9 @@ Third-party libraries remain subject to their own licenses.
             target2 = 1 + Math.round(Math.max(0,Math.min(1,Number(saved.ratio))) * Math.max(0,total2-1));
           }
           target2 = Math.max(1,Math.min(total2,target2));
-          flipEl.turn('page',target2);
+          if(Date.now() < gfRestoreLockUntil){
+            flipEl.turn('page',target2);
+          }
           updateChrome();
           syncBookmarkButton();
         }catch(e){}
