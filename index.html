@@ -2877,46 +2877,59 @@ Third-party libraries remain subject to their own licenses.
       return (d.textContent || '').replace(/\s+/g,' ').trim();
     }
 
-    function rebuildBiblePageIndex(pageBlocks){
-      biblePageIndex = {};
-      if(!pendingBibleBooks.length) return;
+    // Resolve headings as whole blocks, never as words inside titles or TOCs.
+    function gfHeaderBlocks(html){
+      var root=document.createElement('div');
+      root.innerHTML=html;
+      var nodes=Array.from(root.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li'));
+      return (nodes.length ? nodes.map(function(n){return n.textContent;}) : [root.textContent])
+        .map(function(t){return String(t||'').replace(/\s+/g,' ').trim();}).filter(Boolean);
+    }
 
-      var currentBook = '';
-      var booksByHeading = pendingBibleBooks.slice();
-
-      for(var pi=0; pi<pageBlocks.length; pi++){
-        var plain = pagePlainText(pageBlocks[pi]);
-        var events = [];
-
-        for(var bi=0; bi<booksByHeading.length; bi++){
-          var bh = booksByHeading[bi];
-          var pos = plain.indexOf(bh.heading);
-          if(pos >= 0){
-            events.push({pos:pos,type:'book',book:bh.book});
-          }
-        }
-
-        var reRef = /\b(\d{1,3}):(\d{1,3})\b/g;
-        var m;
-        while((m = reRef.exec(plain)) !== null){
-          events.push({pos:m.index,type:'verse',chapter:m[1],verse:m[2]});
-        }
-
-        events.sort(function(a,b){ return a.pos-b.pos; });
-
-        for(var ei=0; ei<events.length; ei++){
-          var ev = events[ei];
-          if(ev.type === 'book'){
-            currentBook = ev.book;
-          }else if(ev.type === 'verse' && currentBook){
-            var key = normBook(currentBook)+'|'+ev.chapter+':'+ev.verse;
-            if(biblePageIndex[key] === undefined){
-              // +2 because Turn.js page 1 is the cover.
-              biblePageIndex[key] = pi + 2;
-            }
-          }
-        }
+    function gfBibleHeading(text){
+      var normalized=normBook(text);
+      if(/^(?:book \d+|the king james|king james|the project gutenberg)/.test(normalized)) return '';
+      for(var i=0;i<canonicalBibleBooks.length;i++){
+        if(normalized===normBook(canonicalBibleBooks[i])) return canonicalBibleBooks[i];
       }
+      // Older editions spell out formal book titles. Require an actual title
+      // phrase, as the legacy metadata may also contain incidental names.
+      if(!/^(?:the )?(?:first |second |third |fourth |fifth )?(?:book|epistle|general epistle|gospel|revelation|song|psalms)\b/i.test(text)) return '';
+      for(var j=0;j<pendingBibleBooks.length;j++){
+        var h=pendingBibleBooks[j];
+        if(normBook(h.heading)===normalized) return h.book;
+      }
+      return '';
+    }
+
+    function gfBiblePageData(pageBlocks,fallbackTitle){
+      var currentBook='', currentChapter='', heads=[], index={}, inContents=false;
+      pageBlocks.forEach(function(html,pi){
+        var blocks=gfHeaderBlocks(html), firstVerseHead='', pageHasContents=false;
+        blocks.forEach(function(text){
+          if(/^(?:table of contents|contents)$/i.test(text) || /^Book\s+\d+\s+/i.test(text)){
+            inContents=true;pageHasContents=true;return;
+          }
+          var book=gfBibleHeading(text);
+          if(book){currentBook=book;currentChapter='';return;}
+          var re=/\b(\d{1,3}):(\d{1,3})\b/g,m;
+          while((m=re.exec(text))!==null){
+            if(!currentBook) continue;
+            inContents=false;
+            currentChapter=m[1];
+            if(!firstVerseHead) firstVerseHead=currentBook+' '+currentChapter;
+            var key=normBook(currentBook)+'|'+m[1]+':'+m[2];
+            if(index[key]===undefined) index[key]=pi+2;
+          }
+        });
+        heads.push(firstVerseHead || ((pageHasContents || inContents) ? 'Contents' :
+          (currentBook ? currentBook+(currentChapter ? ' '+currentChapter : '') : fallbackTitle)));
+      });
+      return {heads:heads,index:index};
+    }
+
+    function rebuildBiblePageIndex(pageBlocks){
+      biblePageIndex=gfBiblePageData(pageBlocks,bookTitle || '').index;
     }
 
     function parseBibleReference(raw){
@@ -3432,55 +3445,20 @@ Third-party libraries remain subject to their own licenses.
 
 
     function buildRunningHeads(pageBlocks, fallbackTitle){
-      var heads = [];
-      var currentHead = fallbackTitle || '';
-      var currentBook = '';
-
-      // Generic EPUBs use the exact same filtered hierarchy as the working
-      // lazy Index. This rejects incidental H-tags such as a lone "A" and
-      // keeps real BOOK / CHAPTER / section headings as the running header.
-      // Bible EPUBs retain their dedicated Book + chapter-number behavior.
-      var knownHeadings = (pendingBibleBooks && pendingBibleBooks.length)
-        ? (pendingChapterHeadings || []).slice()
-        : (
-            (pendingEpubHeadingMeta && pendingEpubHeadingMeta.length)
-              ? chooseEpubIndexHeadings()
-              : (pendingChapterHeadings || []).slice()
-          );
-
-      for(var pi=0; pi<pageBlocks.length; pi++){
-        var plain = pagePlainText(pageBlocks[pi]);
-
-        // Generic EPUB: advance only to a heading from the filtered book index.
-        for(var hi=0; hi<knownHeadings.length; hi++){
-          var h = knownHeadings[hi];
-          if(h && plain.indexOf(h) >= 0){
-            currentHead = h;
-          }
-        }
-
-        // Bible EPUB: track the current book heading and the first chapter
-        // reference found on the page so the running head becomes "John 3",
-        // "Genesis 12", etc.
-        for(var bi=0; bi<pendingBibleBooks.length; bi++){
-          var bh = pendingBibleBooks[bi];
-          if(bh && bh.heading && plain.indexOf(bh.heading) >= 0){
-            currentBook = bh.book || currentBook;
-            if(currentBook) currentHead = currentBook;
-          }
-        }
-
-        if(currentBook){
-          var refs = plain.match(/\b(\d{1,3}):(\d{1,3})\b/g);
-          if(refs && refs.length){
-            var cm = refs[0].match(/^(\d{1,3}):/);
-            if(cm) currentHead = currentBook + ' ' + cm[1];
-          }
-        }
-
-        heads.push(currentHead || fallbackTitle || '');
+      if(pendingBibleBooks && pendingBibleBooks.length){
+        return gfBiblePageData(pageBlocks,fallbackTitle || '').heads;
       }
-      return heads;
+      var currentHead=fallbackTitle || '';
+      var known=(pendingEpubHeadingMeta && pendingEpubHeadingMeta.length)
+        ? chooseEpubIndexHeadings() : (pendingChapterHeadings || []);
+      return pageBlocks.map(function(html){
+        gfHeaderBlocks(html).forEach(function(text){
+          for(var i=0;i<known.length;i++){
+            if(text===known[i]){currentHead=text;break;}
+          }
+        });
+        return currentHead;
+      });
     }
 
     function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride){
@@ -3523,21 +3501,14 @@ Third-party libraries remain subject to their own licenses.
           : paginateParagraphs(paragraphs, chapterLabel);
       }
 
-      if(gfInjectedRunningHeads && gfInjectedRunningHeads.length === pageBlocks.length){
-        pageRunningHeads = gfInjectedRunningHeads.slice();
-        gfInjectedRunningHeads = null;
-      }else{
-        gfInjectedRunningHeads = null;
-        pageRunningHeads = buildRunningHeads(pageBlocks, chapterLabel);
-      }
+      // Recompute metadata even for cached pages so existing books receive
+      // corrected headers immediately without repagination or losing progress.
+      gfInjectedRunningHeads = null;
+      pageRunningHeads = buildRunningHeads(pageBlocks, chapterLabel);
 
       if(pendingBibleBooks.length){
-        if(gfInjectedBiblePageIndex){
-          biblePageIndex = clonePlain(gfInjectedBiblePageIndex, {});
-          gfInjectedBiblePageIndex = null;
-        }else{
-          rebuildBiblePageIndex(pageBlocks);
-        }
+        gfInjectedBiblePageIndex = null;
+        rebuildBiblePageIndex(pageBlocks);
         bibleIsLoaded = Object.keys(biblePageIndex).length > 0;
         bibleJumpEl.style.display = bibleIsLoaded ? 'flex' : 'none';
       }else{
