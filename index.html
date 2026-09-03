@@ -3299,6 +3299,10 @@ Third-party libraries remain subject to their own licenses.
           flipEl.turn('page',target);
           updateChrome();
           syncBookmarkButton();
+          // Ensure restored/newly opened books immediately retain their position.
+          if(typeof saveCurrentProgress === 'function'){
+            saveCurrentProgress();
+          }
         }catch(e){}
       }, 500);
       // Extra retry after Turn.js finishes layout on slower devices.
@@ -6779,4 +6783,4 @@ imgs.forEach(function(img){
 if(loaded===imgs.length) begin();
 
 })();
-  </script>
+</script>
