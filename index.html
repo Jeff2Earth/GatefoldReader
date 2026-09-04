@@ -40,10 +40,16 @@ Third-party libraries remain subject to their own licenses.
 <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/3/turn.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.11.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module">
-  import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.min.mjs";
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.mjs";
-  window.pdfjsLib = pdfjsLib;
+<script>
+// Keep one readiness promise: selecting a PDF early waits for the engine.
+window.gfPdfLibraryReady = import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs')
+  .then(function(pdfjsLib){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+    window.pdfjsLib = pdfjsLib;
+    return pdfjsLib;
+  });
+// The file loader reports dependency failures when a PDF is actually selected.
+window.gfPdfLibraryReady.catch(function(){});
 </script>
 
 <div class="gf-root" style="
@@ -4190,30 +4196,50 @@ Third-party libraries remain subject to their own licenses.
 
       } else if(ext === 'pdf'){
         pendingBibleBooks = []; pendingChapterHeadings = []; pendingEpubHeadingMeta = []; bibleIsLoaded = false; bibleJumpEl.style.display = 'none'; pendingEpubArtwork = {}; pendingEpubCoverUrl = '';
-        if(typeof window.pdfjsLib === 'undefined'){
-          showLoadError('The PDF reader is still loading \u2014 try again in a moment.');
-          return;
-        }
-        var r3 = new FileReader();
-        r3.onload = function(e){
-          var task = window.pdfjsLib.getDocument({ data: e.target.result });
-          task.promise.then(function(pdf){
-            var proms = [];
-            for(var i=1;i<=pdf.numPages;i++){
-              proms.push(pdf.getPage(i).then(function(page){
-                return page.getTextContent().then(function(tc){
-                  return tc.items.map(function(it){ return it.str; }).join(' ');
-                });
-              }));
-            }
-            Promise.all(proms).then(function(pageTexts){
-              var paras = pageTexts.map(function(t){ return t.replace(/\s+/g,' ').trim(); }).filter(Boolean);
+        showLoadStatus('Preparing PDF reader…');
+        window.gfPdfLibraryReady.then(function(pdfjsLib){
+          if(currentBookId !== incomingBookId) return;
+          var r3 = new FileReader();
+          r3.onload = async function(e){
+            var task=null;
+            try{
+              task=pdfjsLib.getDocument({data:new Uint8Array(e.target.result),isEvalSupported:false});
+              var pdf=await task.promise;
+              var paras=[];
+              for(var pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
+                if(currentBookId !== incomingBookId) return;
+                showLoadStatus('Reading PDF page '+pageNumber+' of '+pdf.numPages+'…');
+                var pdfPage=await pdf.getPage(pageNumber);
+                var textContent=await pdfPage.getTextContent();
+                var text=textContent.items.map(function(item){return item.str || '';}).join(' ').replace(/\s+/g,' ').trim();
+                if(text) paras.push(text);
+                pdfPage.cleanup();
+                // Yield between pages so loading progress can paint on Android.
+                await new Promise(function(resolve){setTimeout(resolve,0);});
+              }
+              if(currentBookId !== incomingBookId) return;
+              if(!paras.length){
+                showLoadError('This PDF contains scanned images without readable text. It needs OCR before this reader can open it.');
+                return;
+              }
+              showLoadStatus('Formatting PDF text…');
+              await new Promise(function(resolve){setTimeout(resolve,0);});
               buildSelectedBook(paras, title, '');
-            }).catch(function(){ showLoadError('Could not read the text in that PDF.'); });
-          }).catch(function(){ showLoadError('Could not open that PDF.'); });
-        };
-        r3.onerror = function(){ showLoadError('Could not read that PDF.'); };
-        r3.readAsArrayBuffer(file);
+            }catch(err){
+              if(currentBookId !== incomingBookId) return;
+              var message=err && err.name==='PasswordException'
+                ? 'This PDF requires a password. Open an unlocked copy.'
+                : 'Could not load this PDF: '+((err && err.message) || 'Unknown PDF error.');
+              showLoadError(message);
+            }finally{
+              if(task){try{await task.destroy();}catch(cleanupError){}}
+            }
+          };
+          r3.onerror=function(){if(currentBookId===incomingBookId) showLoadError('Could not read that PDF file.');};
+          r3.readAsArrayBuffer(file);
+        }).catch(function(){
+          if(currentBookId===incomingBookId) showLoadError('The PDF reader could not download. Check your connection and reload the app.');
+        });
 
       } else if(ext === 'epub'){
         if(typeof window.JSZip === 'undefined'){
