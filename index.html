@@ -5562,6 +5562,7 @@ window.gfPdfLibraryReady.catch(function(){});
     }
 
     function openToolbar(){
+      toolbarEl.removeAttribute('inert');
       showAppleHandleFeedback();
       toolbarEl.classList.add('open');
       syncBookmarkButton();
@@ -5569,6 +5570,15 @@ window.gfPdfLibraryReady.catch(function(){});
     }
     function closeToolbar(){
       cancelToolbarAutoClose();
+      // Hiding a focused input alone can leave Android's keyboard attached.
+      var focused = document.activeElement;
+      if(focused && (toolbarEl.contains(focused) ||
+         bibleIndexPanel.contains(focused) || settingsPanel.contains(focused))){
+        if(typeof focused.blur === 'function') focused.blur();
+      }
+      closeBibleIndex();
+      closeSettingsPanel();
+      toolbarEl.setAttribute('inert', '');
       toolbarEl.classList.remove('open');
       hideAppleHandleFeedback();
     }
