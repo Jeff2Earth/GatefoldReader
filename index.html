@@ -3307,7 +3307,7 @@ Third-party libraries remain subject to their own licenses.
     var suppressProgressSave = false;
 
     function saveCurrentProgress(){
-      if(suppressProgressSave) return;
+      if(suppressProgressSave || pendingRestoreProgress) return;
       if(!currentBookId || !flipEl) return;
       try{
         var page = flipEl.turn('page');
@@ -3327,43 +3327,34 @@ Third-party libraries remain subject to their own licenses.
 
     function restorePageAfterBuild(){
       if(!pendingRestoreProgress || !flipEl) return;
-
-      var saved = pendingRestoreProgress;
-      pendingRestoreProgress = null;
-
-      setTimeout(function(){
+      var saved=pendingRestoreProgress, restoringBookId=currentBookId;
+      var attempt=0;
+      function restore(){
+        // A later book selection or successful restore cancels stale retries.
+        if(pendingRestoreProgress!==saved || currentBookId!==restoringBookId) return;
         try{
-          var total = flipEl.turn('pages');
-          var target = Number(saved.page) || 1;
-
-          // If screen size/font/fold mode changed the number of pages,
-          // restore the same approximate reading position instead.
-          if(saved.pages && total && Number(saved.pages) !== Number(total) && isFinite(saved.ratio)){
-            target = 1 + Math.round(
-              Math.max(0,Math.min(1,Number(saved.ratio))) * Math.max(0,total-1)
-            );
+          var total=Number(flipEl.turn('pages')) || 0;
+          if(total<1) throw new Error('Reader layout is not ready');
+          var target=Number(saved.page) || 1;
+          if(saved.pages && Number(saved.pages)!==total && isFinite(saved.ratio)){
+            target=1+Math.round(Math.max(0,Math.min(1,Number(saved.ratio)))*(total-1));
           }
-
-          target = Math.max(1,Math.min(total,target));
+          target=Math.max(1,Math.min(total,Math.round(target)));
           flipEl.turn('page',target);
+          // Do not release the save guard until Turn.js accepts the target.
+          if(Number(flipEl.turn('page'))!==target) throw new Error('Restore pending');
+          pendingRestoreProgress=null;
           updateChrome();
           syncBookmarkButton();
+          saveCurrentProgress();
+          return;
         }catch(e){}
-      }, 500);
-      // Extra retry after Turn.js finishes layout on slower devices.
-      setTimeout(function(){
-        try{
-          var total2 = flipEl.turn('pages');
-          var target2 = Number(saved.page) || 1;
-          if(saved.pages && total2 && Number(saved.pages) !== Number(total2) && isFinite(saved.ratio)){
-            target2 = 1 + Math.round(Math.max(0,Math.min(1,Number(saved.ratio))) * Math.max(0,total2-1));
-          }
-          target2 = Math.max(1,Math.min(total2,target2));
-          flipEl.turn('page',target2);
-          updateChrome();
-          syncBookmarkButton();
-        }catch(e){}
-      }, 1200);
+        if(++attempt<8) setTimeout(restore,150);
+        // If layout never becomes ready, retain the stored location rather
+        // than replacing it with the temporary cover.
+      }
+      // Restore before geometry verification can snapshot the cover page.
+      restore();
     }
 
     function restoreLastBook(){
@@ -3634,11 +3625,9 @@ Third-party libraries remain subject to their own licenses.
             var current = flipEl.turn('page');
             var total = flipEl.turn('pages');
 
-            // No wraparound: a physical book cannot turn backward from page 1
-            // to the final page, or forward from the final page to page 1.
-            if((current <= 1 && page > 2) ||
-               (current >= total && page < total-1) ||
-               Math.abs(page-current) > 2){
+            // Turn.js already stops previous/next at the book boundaries.
+            // Valid direct jumps are required for resume, Index and bookmarks.
+            if(!isFinite(page) || page < 1 || page > total){
               event.preventDefault();
               endTurnAudio();
             }
