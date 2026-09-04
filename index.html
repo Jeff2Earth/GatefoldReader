@@ -6149,6 +6149,7 @@ window.gfPdfLibraryReady.catch(function(){});
 
     function generalIndexKey(s){
       return normalizeHeadingText(s)
+        .normalize('NFKC')
         .toLowerCase()
         .replace(/[“”"'’‘]/g,'')
         .replace(/[^a-z0-9]+/g,' ')
@@ -6163,18 +6164,36 @@ window.gfPdfLibraryReady.catch(function(){});
       return false;
     }
 
+    function gfRomanHeadingNumber(text){
+      var t=normalizeHeadingText(text).normalize('NFKC').replace(/[.:]$/, '').trim().toUpperCase();
+      // A complete numeral only: never match Roman letters inside prose.
+      if(!t || !/^M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/.test(t)) return 0;
+      var values={I:1,V:5,X:10,L:50,C:100,D:500,M:1000}, n=0;
+      for(var i=0;i<t.length;i++) n += values[t[i]] < (values[t[i+1]] || 0) ? -values[t[i]] : values[t[i]];
+      return n;
+    }
+
     function chooseEpubIndexHeadings(){
       var meta=(pendingEpubHeadingMeta || []).filter(function(h){return h && normalizeHeadingText(h.text);});
       var candidates=meta.map(function(h){return h.text;}).concat(pendingChapterHeadings || []);
       // Cached source paragraphs supply headings even when EPUB H-tags were
       // incomplete. This also supports TXT/DOCX books without EPUB metadata.
       candidates=candidates.concat((currentSource && currentSource.paragraphs) || []);
+      // Bare numerals are chapter candidates when the book contains a
+      // consecutive numbering sequence. A lone "I" in prose is insufficient.
+      var romanNumbers={};
+      candidates.forEach(function(text){
+        var n=gfRomanHeadingNumber(text);
+        if(n) romanNumbers[n]=true;
+      });
       var strong=[], seen={};
       candidates.forEach(function(text){
         text=normalizeHeadingText(text);
         var key=generalIndexKey(text);
         if(!key || seen[key]) return;
-        if(looksLikeStrongBookHeading(text) || /^(?:etymology|extracts)(?:[.:(\s]|$)/i.test(text) && text.length<120){
+        var roman=gfRomanHeadingNumber(text);
+        var numbered=roman && (romanNumbers[roman-1] || romanNumbers[roman+1]);
+        if(numbered || looksLikeStrongBookHeading(text) || /^(?:etymology|extracts)(?:[.:(\s]|$)/i.test(text) && text.length<120){
           seen[key]=true;strong.push(text);
         }
       });
@@ -6932,4 +6951,4 @@ window.gfPdfLibraryReady.catch(function(){});
   // A stalled image request must not prevent access to the reader.
   setTimeout(begin,5000);
 })();
-</script>
+  </script>
