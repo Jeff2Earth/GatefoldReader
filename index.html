@@ -143,11 +143,11 @@ window.gfPdfLibraryReady.catch(function(){});
     box-sizing:border-box;">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;">
       <input id="gf-toolbar-ref" type="search" placeholder="John 3:16" aria-label="Bible reference"
-        style="width:118px;padding:7px 9px;border-radius:14px;border:1px solid rgba(198,161,91,.35);
+        style="display:none;width:118px;padding:7px 9px;border-radius:14px;border:1px solid rgba(198,161,91,.35);
         background:rgba(255,255,255,.06);color:#eee7d5;font:12px var(--font-ui);outline:none;">
       <button id="gf-toolbar-index" type="button" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Index ▾</button>
-      <button id="gf-toolbar-go" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
+      <button id="gf-toolbar-go" style="display:none;padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Go</button>
       <button id="gf-toolbar-load" style="padding:7px 10px;border-radius:14px;border:1px solid rgba(198,161,91,.4);
         background:rgba(255,255,255,.05);color:var(--gilt);font:12px var(--font-ui);">Load Book</button>
@@ -3646,6 +3646,8 @@ window.gfPdfLibraryReady.catch(function(){});
         bibleJumpEl.style.display = 'none';
       }
 
+      syncBibleReferenceControls();
+
       // V22: save parsed source ONCE plus this exact render variant.
       // The parsed source lets new font sizes skip EPUB/PDF/DOCX parsing.
       // The render variant lets previously-used font/layout combinations skip
@@ -5561,7 +5563,18 @@ window.gfPdfLibraryReady.catch(function(){});
       }, TOOLBAR_AUTO_CLOSE_MS);
     }
 
+    function syncBibleReferenceControls(){
+      ['gf-toolbar-ref','gf-toolbar-go'].forEach(function(id){
+        var control=document.getElementById(id);
+        if(!control) return;
+        if(!bibleIsLoaded && document.activeElement===control) control.blur();
+        control.style.display=bibleIsLoaded ? '' : 'none';
+        control.disabled=!bibleIsLoaded;
+      });
+    }
+
     function openToolbar(){
+      syncBibleReferenceControls();
       toolbarEl.removeAttribute('inert');
       showAppleHandleFeedback();
       toolbarEl.classList.add('open');
