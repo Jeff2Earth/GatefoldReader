@@ -1245,7 +1245,7 @@ window.gfPdfLibraryReady.catch(function(){});
     // Final rendered-page authority. This pass works on the completed page HTML,
     // not Canvas estimates. It guarantees that every unfolded text page fits
     // inside the actual browser-measured .para box.
-    function enforceHardPhysicalFit(inputPages){
+    function enforceHardPhysicalFit(inputPages, realFitMeasure){
       if(folded) return inputPages;
       if(gfChapterBreaksActive) return inputPages;
 
@@ -2674,7 +2674,7 @@ window.gfPdfLibraryReady.catch(function(){});
       // V45: FINAL authority is the actual rendered browser page.
       // Any physically overflowing words are pushed forward; then text is pulled
       // back only while the real DOM still fits. This prevents clipped/missing text.
-      pages = enforceHardPhysicalFit(pages);
+      pages = enforceHardPhysicalFit(pages, realFitMeasure);
 
       return pages.length ? pages : [''];
     }
