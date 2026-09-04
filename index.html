@@ -3444,21 +3444,56 @@ Third-party libraries remain subject to their own licenses.
     }
 
 
+    function gfValidateBibleMetadata(paragraphs,title){
+      if(!pendingBibleBooks.length) return;
+      var refs=0;
+      (paragraphs || []).some(function(text){
+        refs+=(String(text).match(/\b\d{1,3}:\d{1,3}\b/g) || []).length;
+        return refs>=40;
+      });
+      var valid=pendingBibleBooks.filter(function(h){return gfBibleHeading(h.heading)===h.book;});
+      var distinct={};
+      valid.forEach(function(h){distinct[h.book]=true;});
+      var isBible=refs>=8 && ( /\b(?:bible|testament|scriptures)\b/i.test(title || '') ||
+        Object.keys(distinct).length>=2 || (refs>=40 && valid.length>0));
+      pendingBibleBooks=isBible ? valid : [];
+    }
+
+    // Headers and the dropdown share actual heading locations. When a title
+    // appears in both the printed TOC and the chapter, use its last occurrence.
+    function gfGeneralPageData(pageBlocks,fallbackTitle){
+      var known=chooseEpubIndexHeadings(), wanted={}, last={}, pages=[];
+      known.forEach(function(h){wanted[generalIndexKey(h)]=h;});
+      pageBlocks.forEach(function(html,pi){
+        var blocks=gfHeaderBlocks(html);
+        pages.push(blocks);
+        blocks.forEach(function(text,bi){
+          var key=generalIndexKey(text);
+          if(wanted[key]) last[key]={page:pi,block:bi};
+        });
+      });
+      var head=fallbackTitle || '', heads=[], entries=[];
+      pages.forEach(function(blocks,pi){
+        blocks.forEach(function(text,bi){
+          var key=generalIndexKey(text), location=last[key];
+          if(location && location.page===pi && location.block===bi){
+            head=wanted[key];
+            entries.push({label:head,page:pi+2});
+          }
+        });
+        heads.push(head);
+      });
+      return {heads:heads,entries:entries};
+    }
+
     function buildRunningHeads(pageBlocks, fallbackTitle){
       if(pendingBibleBooks && pendingBibleBooks.length){
         return gfBiblePageData(pageBlocks,fallbackTitle || '').heads;
       }
-      var currentHead=fallbackTitle || '';
-      var known=(pendingEpubHeadingMeta && pendingEpubHeadingMeta.length)
-        ? chooseEpubIndexHeadings() : (pendingChapterHeadings || []);
-      return pageBlocks.map(function(html){
-        gfHeaderBlocks(html).forEach(function(text){
-          for(var i=0;i<known.length;i++){
-            if(text===known[i]){currentHead=text;break;}
-          }
-        });
-        return currentHead;
-      });
+      var data=gfGeneralPageData(pageBlocks,fallbackTitle);
+      lazyGeneralNav=data.entries;
+      lazyGeneralNavSource=currentSource;
+      return data.heads;
     }
 
     function buildBookFromParagraphs(paragraphs, title, author, chapterLabelOverride){
@@ -3471,6 +3506,7 @@ Third-party libraries remain subject to their own licenses.
       lazyGeneralNav = null;
       lazyGeneralNavSource = null;
       paragraphs = (paragraphs||[]).map(function(p){ return p.replace(/\s+/g,' ').trim(); }).filter(Boolean);
+      gfValidateBibleMetadata(paragraphs,title);
       paragraphs = gfPrepareChapterBreakParagraphs(paragraphs);
       if(paragraphs.length === 0){
         showLoadError('That file did not contain any readable text.');
@@ -6025,50 +6061,34 @@ Third-party libraries remain subject to their own licenses.
     }
 
     function chooseEpubIndexHeadings(){
-      var meta = (pendingEpubHeadingMeta || []).filter(function(h){
-        return h && normalizeHeadingText(h.text);
+      var meta=(pendingEpubHeadingMeta || []).filter(function(h){return h && normalizeHeadingText(h.text);});
+      var candidates=meta.map(function(h){return h.text;}).concat(pendingChapterHeadings || []);
+      // Cached source paragraphs supply headings even when EPUB H-tags were
+      // incomplete. This also supports TXT/DOCX books without EPUB metadata.
+      candidates=candidates.concat((currentSource && currentSource.paragraphs) || []);
+      var strong=[], seen={};
+      candidates.forEach(function(text){
+        text=normalizeHeadingText(text);
+        var key=generalIndexKey(text);
+        if(!key || seen[key]) return;
+        if(looksLikeStrongBookHeading(text) || /^(?:etymology|extracts)(?:[.:(\s]|$)/i.test(text) && text.length<120){
+          seen[key]=true;strong.push(text);
+        }
       });
-
-      // Prefer a consistent heading level with at least two distinct entries.
-      // This is what avoids random H3-style subheads.
-      if(meta.length){
-        var levels = [1,2,3];
-        for(var li=0; li<levels.length; li++){
-          var level = levels[li], arr = [], seen = {};
-          for(var i=0;i<meta.length;i++){
-            if(meta[i].level !== level) continue;
-            var text = normalizeHeadingText(meta[i].text);
-            var key = generalIndexKey(text);
-            if(!key || seen[key]) continue;
-            seen[key] = true;
-            arr.push(text);
-          }
-          if(arr.length >= 2) return arr;
-        }
-
-        // If the EPUB hierarchy is unusual, use conventional chapter labels.
-        var strong = [], strongSeen = {};
-        for(var j=0;j<meta.length;j++){
-          var st = normalizeHeadingText(meta[j].text);
-          var sk = generalIndexKey(st);
-          if(!sk || strongSeen[sk] || !looksLikeStrongBookHeading(st)) continue;
-          strongSeen[sk] = true;
-          strong.push(st);
-        }
-        if(strong.length) return strong;
+      if(strong.length) return strong;
+      // Unnumbered novels retain their consistent EPUB heading hierarchy.
+      var titleKey=generalIndexKey((currentSource && currentSource.title) || '');
+      for(var level=1;level<=6;level++){
+        var arr=[], unique={};
+        meta.forEach(function(h){
+          var text=normalizeHeadingText(h.text), key=generalIndexKey(text);
+          if(h.level!==level || !key || key===titleKey || unique[key] ||
+             /^(?:contents|table of contents|copyright|title page)$/.test(key)) return;
+          unique[key]=true;arr.push(text);
+        });
+        if(arr.length>=2) return arr;
       }
-
-      // Fallback to distinct running-head transitions already computed by Gatefold.
-      var transitions = [], transSeen = {};
-      var titleKey = generalIndexKey((currentSource && currentSource.title) || '');
-      for(var p=0;p<(pageRunningHeads || []).length;p++){
-        var rh = normalizeHeadingText(pageRunningHeads[p]);
-        var rk = generalIndexKey(rh);
-        if(!rk || rk === titleKey || transSeen[rk]) continue;
-        transSeen[rk] = true;
-        transitions.push(rh);
-      }
-      return transitions;
+      return [];
     }
 
     function addGeneralEntry(entries, seen, label, page){
