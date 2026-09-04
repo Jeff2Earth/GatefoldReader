@@ -3565,7 +3565,7 @@ Third-party libraries remain subject to their own licenses.
       // The parsed source lets new font sizes skip EPUB/PDF/DOCX parsing.
       // The render variant lets previously-used font/layout combinations skip
       // pagination entirely.
-      if(currentBookId && title !== 'Opening your book…'){
+      if(currentBookId && title !== 'Click above to load your book'){
         var parsedSourceForCache = {
           title:title,
           author:author || '',
@@ -3656,7 +3656,7 @@ Third-party libraries remain subject to their own licenses.
         setTimeout(function(){
           try{
             if(gfLiveLeafRebuildInFlight) return;
-            if(!flipEl || !flipEl.length) return;
+            if(!flipEl || !flipEl.length || flipEl[0] !== newEl) return;
 
             // V58: unfolded pagination must calibrate from the ACTUAL visible
             // text leaf, not the Turn.js wrapper. The wrapper can report the
@@ -3916,8 +3916,8 @@ Third-party libraries remain subject to their own licenses.
 
     if(hasRememberedBookAtStartup){
       buildBookFromParagraphs(
-        ['Opening your book…'],
-        'Opening your book…',
+        ['Click above to load your book'],
+        'Click above to load your book',
         '',
         ''
       );
@@ -5597,7 +5597,15 @@ Third-party libraries remain subject to their own licenses.
       return { w:Math.max(280,Math.floor(vw)), h:Math.max(320,Math.floor(vh)) };
     }
 
-    function applyReadingMode(restoreSnapshot){
+    function applyReadingMode(restoreSnapshot, onSettled){
+      var layoutBookId=currentBookId, settled=false;
+      function finishLayout(){
+        if(settled || layoutBookId!==currentBookId) return;
+        settled=true;
+        suppressProgressSave=false;
+        if(pendingRestoreProgress) restorePageAfterBuild();
+        if(onSettled) onSettled();
+      }
       var before = restoreSnapshot || captureReadingSnapshot();
 
       // V48: resolve Auto posture before any pagination work. This prevents the
@@ -5683,7 +5691,7 @@ Third-party libraries remain subject to their own licenses.
         var widthChecked = false;
 
         function correctWidthIfNeeded(){
-          if(widthChecked) return;
+          if(widthChecked || layoutBookId!==currentBookId) return;
           widthChecked = true;
           // V11 calibrates pagination directly from the live Turn.js page box.
           // Do not also mutate requested book width after that calibration.
@@ -5711,7 +5719,7 @@ Third-party libraries remain subject to their own licenses.
         }
 
         function restoreAfterLayoutChange(){
-          if(restored) return;
+          if(restored || layoutBookId!==currentBookId) return;
 
           try{
             if(!flipEl || !flipEl.length) return;
@@ -5748,6 +5756,7 @@ Third-party libraries remain subject to their own licenses.
             restored = true;
             suppressProgressSave = false;
             saveCurrentProgress();
+            finishLayout();
 
             // Keep the rotation anchor alive long enough for any live-leaf
             // correction spawned by this rebuild to consume it.
@@ -5775,6 +5784,7 @@ Third-party libraries remain subject to their own licenses.
           restoreAfterLayoutChange();
         }, 180);
         setTimeout(function(){
+          if(layoutBookId!==currentBookId) return;
           correctWidthIfNeeded();
           if(!restored){
             restoreAfterLayoutChange();
@@ -5782,12 +5792,14 @@ Third-party libraries remain subject to their own licenses.
           if(!restored){
             // Failsafe: never leave progress saving permanently disabled.
             suppressProgressSave = false;
+            finishLayout();
           }
         }, 500);
 
       }else{
         applyDisplay();
         suppressProgressSave = false;
+        finishLayout();
       }
     }
 
@@ -6475,7 +6487,7 @@ Third-party libraries remain subject to their own licenses.
       closeToolbar();
     });
 
-    function applyFontScale(){
+    function applyFontScale(stylesOnly){
       var thisFontGeneration = ++fontRebuildGeneration;
       // Save the CURRENT reading position before repagination.
       // Font changes alter page count, so use both raw page and proportional
@@ -6510,6 +6522,8 @@ Third-party libraries remain subject to their own licenses.
       style.textContent =
         '.gf-root .para{font-size:'+userFontPx+'px!important;}';
 
+      if(stylesOnly === true) return;
+
       if(currentSource){
         if(measureEl){
           try{ measureEl.remove(); }catch(e){}
@@ -6526,9 +6540,12 @@ Third-party libraries remain subject to their own licenses.
         // buildBookFromParagraphs creates a fresh Turn.js instance whose
         // default is page 1. Restore the user's reading position AFTER the
         // fresh pagination exists.
+        var fontRestoreElement=flipEl && flipEl[0];
+        var fontRestoreDone=false;
         var restoreAfterFontChange = function(){
           // Ignore delayed callbacks left over from an older font rebuild.
-          if(thisFontGeneration !== fontRebuildGeneration) return;
+          if(fontRestoreDone || thisFontGeneration !== fontRebuildGeneration ||
+             !flipEl || flipEl[0] !== fontRestoreElement) return;
 
           try{
             if(!flipEl || !flipEl.length) return;
@@ -6546,6 +6563,7 @@ Third-party libraries remain subject to their own licenses.
 
             target = Math.max(1, Math.min(afterPages, target));
             flipEl.turn('page', target);
+            fontRestoreDone=true;
 
             updateChrome();
             syncBookmarkButton();
@@ -6707,13 +6725,14 @@ Third-party libraries remain subject to their own licenses.
     applyReaderStyleChoices(false);
 
     // Start in the saved reading mode and reopen the last book.
-    applyFontScale();
+    applyFontScale(true);
     var initialVp = getViewportSize();
     lastStableViewport = {w:initialVp.w,h:initialVp.h};
 
     setTimeout(function(){
-      applyReadingMode();
-      restoreLastBook();
+      // Finish the placeholder layout before assigning/restoring a real book.
+      // Otherwise its delayed cover snapshot can overwrite the restored page.
+      applyReadingMode(null, function(){ restoreLastBook(); });
     }, 0);
 
     // Save on app background/close. pagehide is the most reliable close-like
