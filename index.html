@@ -179,9 +179,6 @@ window.gfPdfLibraryReady.catch(function(){});
         min-width:92px;flex:1 1 92px;padding:8px 9px;border-radius:12px;
         border:1px solid rgba(198,161,91,.35);background:#171925;color:#eee7d5;
         font:16px var(--font-ui);outline:none;"></select>
-      <button id="gf-index-go" type="button" style="
-        padding:8px 12px;border-radius:12px;border:1px solid rgba(198,161,91,.45);
-        background:rgba(255,255,255,.07);color:var(--gilt);font:14px var(--font-ui);">Go</button>
       <button id="gf-index-close" type="button" aria-label="Close Bible index" style="
         width:36px;height:36px;border-radius:12px;border:1px solid rgba(198,161,91,.3);
         background:rgba(255,255,255,.05);color:#eee7d5;font:18px var(--font-ui);">×</button>
@@ -5375,7 +5372,6 @@ window.gfPdfLibraryReady.catch(function(){});
     var bibleIndexBook = document.getElementById('gf-index-book');
     var bibleIndexChapter = document.getElementById('gf-index-chapter');
     var bibleIndexVerse = document.getElementById('gf-index-verse');
-    var bibleIndexGo = document.getElementById('gf-index-go');
     var bibleIndexClose = document.getElementById('gf-index-close');
     var toolbarLoad = document.getElementById('gf-toolbar-load');
     var toolbarBookmark = document.getElementById('gf-toolbar-bookmark');
@@ -6340,6 +6336,10 @@ window.gfPdfLibraryReady.catch(function(){});
       }
 
       bibleIndexBook.innerHTML = '';
+      var promptOption = makeIndexOption('', 'Select chapter or section');
+      promptOption.disabled = true;
+      promptOption.selected = true;
+      bibleIndexBook.appendChild(promptOption);
       for(var i=0;i<nav.length;i++){
         bibleIndexBook.appendChild(makeIndexOption(i, nav[i].label));
       }
@@ -6347,7 +6347,6 @@ window.gfPdfLibraryReady.catch(function(){});
       bibleIndexBook.setAttribute('aria-label','Book chapter or section');
       bibleIndexChapter.style.display = 'none';
       bibleIndexVerse.style.display = 'none';
-      bibleIndexGo.textContent = 'Go';
       bibleIndexPanel.style.display = 'block';
       bibleIndexPanel.setAttribute('aria-hidden','false');
     }
@@ -6389,12 +6388,19 @@ window.gfPdfLibraryReady.catch(function(){});
 
     bibleIndexBook.addEventListener('change', function(){
       if(bibleIsLoaded) populateIndexChapters();
+      jumpToIndexSelection(!bibleIsLoaded);
     });
     bibleIndexChapter.addEventListener('change', function(){
-      if(bibleIsLoaded) populateIndexVerses();
+      if(bibleIsLoaded){
+        populateIndexVerses();
+        jumpToIndexSelection(false);
+      }
+    });
+    bibleIndexVerse.addEventListener('change', function(){
+      jumpToIndexSelection(true);
     });
 
-    bibleIndexGo.addEventListener('click', function(){
+    function jumpToIndexSelection(closeAfterJump){
       if(!bibleIsLoaded){
         var nav = buildLazyGeneralNav();
         var idx = parseInt(bibleIndexBook.value,10);
@@ -6435,12 +6441,14 @@ window.gfPdfLibraryReady.catch(function(){});
           toolbarRef.value = bookName+' '+chapter+':'+verse;
         }
         showLoadStatus(bookName+' '+chapter+':'+verse);
-        closeBibleIndex();
-        closeToolbar();
+        if(closeAfterJump){
+          closeBibleIndex();
+          closeToolbar();
+        }
       }catch(e){
         showLoadError('Could not jump to that verse.');
       }
-    });
+    }
 
     bibleIndexClose.addEventListener('click', closeBibleIndex);
 
