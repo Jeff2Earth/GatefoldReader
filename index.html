@@ -3305,13 +3305,46 @@ Third-party libraries remain subject to their own licenses.
     }
 
     var suppressProgressSave = false;
+    var gfGestureCheckpoint = null;
+    var gfInterruptedReading = null;
+
+    function gfInterruptReadingGesture(){
+      var checkpoint=gfGestureCheckpoint;
+      if(!checkpoint || checkpoint.bookId!==currentBookId) return;
+      gfInterruptedReading=checkpoint;
+      gfGestureCheckpoint=null;
+      if(quadrantGesture){
+        quadrantGesture.cancelled=true;
+        quadrantGesture.finished=true;
+        if(quadrantGesture.autoPullRaf) cancelAnimationFrame(quadrantGesture.autoPullRaf);
+        quadrantGesture=null;
+      }
+      // Persist the pre-drag position before Android can terminate the page.
+      saveCurrentProgress();
+      endTurnAudio(true);
+      setTimeout(gfResumeInterruptedReading,250);
+    }
+
+    function gfResumeInterruptedReading(){
+      var checkpoint=gfInterruptedReading;
+      if(!checkpoint || document.hidden) return;
+      if(checkpoint.bookId!==currentBookId){gfInterruptedReading=null;return;}
+      pendingRestoreProgress=checkpoint.snapshot;
+      // Keep layout snapshots anchored while cancelling the unfinished curl.
+      try{if(flipEl) flipEl.turn('stop');}catch(e){}
+      restorePageAfterBuild();
+      if(!pendingRestoreProgress) gfInterruptedReading=null;
+    }
+
 
     function saveCurrentProgress(){
-      if(suppressProgressSave || pendingRestoreProgress) return;
+      var interrupted=gfInterruptedReading && gfInterruptedReading.bookId===currentBookId
+        ? gfInterruptedReading.snapshot : null;
+      if(!interrupted && (suppressProgressSave || pendingRestoreProgress)) return;
       if(!currentBookId || !flipEl) return;
       try{
-        var page = flipEl.turn('page');
-        var pages = flipEl.turn('pages');
+        var page = interrupted ? interrupted.page : flipEl.turn('page');
+        var pages = interrupted ? interrupted.pages : flipEl.turn('pages');
         if(!page || !pages) return;
 
         localStorage.setItem(progressKey(currentBookId), JSON.stringify({
@@ -3344,6 +3377,7 @@ Third-party libraries remain subject to their own licenses.
           // Do not release the save guard until Turn.js accepts the target.
           if(Number(flipEl.turn('page'))!==target) throw new Error('Restore pending');
           pendingRestoreProgress=null;
+          if(gfInterruptedReading && gfInterruptedReading.snapshot===saved) gfInterruptedReading=null;
           updateChrome();
           syncBookmarkButton();
           saveCurrentProgress();
@@ -4890,6 +4924,7 @@ Third-party libraries remain subject to their own licenses.
             // animation, verify that its logical page actually changed.
             setTimeout(function(){
               try{
+                if(g.cancelled || document.hidden || !g.page.closest('#flipbook').length) return;
                 var nowPage = flipEl.turn('page') || 0;
                 if(beforeBookPage && nowPage === beforeBookPage){
                   if(g.wantRight) flipEl.turn('next');
@@ -4965,6 +5000,11 @@ Third-party libraries remain subject to their own licenses.
     }
 
     window.addEventListener('pointerdown', function(e){
+      if(currentBookId && !pendingRestoreProgress && !suppressProgressSave &&
+         screenEl.contains(e.target)){
+        gfGestureCheckpoint={bookId:currentBookId,snapshot:captureReadingSnapshot()};
+        saveCurrentProgress();
+      }
       lastPointer = {x:e.clientX,y:e.clientY,t:performance.now()};
       lastGestureSpeed = 0;
       lastGestureTime = performance.now();
@@ -4975,6 +5015,7 @@ Third-party libraries remain subject to their own licenses.
     }, true);
 
     window.addEventListener('pointerup', function(){
+      gfGestureCheckpoint=null;
       lastGestureTime = performance.now();
       lastPointer = null;
       // Turn.js normally ends the page sound itself. This fallback prevents
@@ -4983,11 +5024,13 @@ Third-party libraries remain subject to their own licenses.
     }, true);
 
     window.addEventListener('pointercancel', function(){
+      gfInterruptReadingGesture();
       lastPointer = null;
       endTurnAudio(true);
     }, true);
 
     window.addEventListener('touchcancel', function(){
+      gfInterruptReadingGesture();
       lastPointer = null;
       endTurnAudio(true);
     }, true);
@@ -5160,6 +5203,9 @@ Third-party libraries remain subject to their own licenses.
     var viewportAuthoritativeSnapshot = null;
 
     function captureReadingSnapshot(){
+      if(gfInterruptedReading && gfInterruptedReading.bookId===currentBookId){
+        return Object.assign({},gfInterruptedReading.snapshot);
+      }
       var snap = {
         page:1,
         pages:1,
@@ -6738,16 +6784,22 @@ Third-party libraries remain subject to their own licenses.
     // Save on app background/close. pagehide is the most reliable close-like
     // signal for an installed Android PWA.
     window.addEventListener('pagehide', function(){
+      gfInterruptReadingGesture();
       saveCurrentProgress();
       saveAppSettings();
     });
 
     document.addEventListener('visibilitychange', function(){
       if(document.visibilityState === 'hidden'){
+        gfInterruptReadingGesture();
         saveCurrentProgress();
         saveAppSettings();
+      }else{
+        gfResumeInterruptedReading();
       }
     });
+
+    window.addEventListener('pageshow', gfResumeInterruptedReading);
 
     // PWA service worker.
     if('serviceWorker' in navigator){
