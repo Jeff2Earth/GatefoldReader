@@ -4650,13 +4650,11 @@ window.gfPdfLibraryReady.catch(function(){});
     // corner into Turn.js while retaining its real page-curl physics.
     var quadrantOverlay = document.getElementById('gf-swipe-overlay');
     var quadrantGesture = null;
-    var COMMIT_DRAG_PX = 0.35; // almost imperceptible intentional movement latches the turn
-    var DRAG_GAIN_X = 16.0;    // very short finger travel produces a strong page pull
+    var COMMIT_DRAG_PX = 6; // ignore normal finger drift while holding the corner
+    var DRAG_GAIN_X = 2.5;     // follow slow pulls without racing ahead of the finger
     var DRAG_GAIN_Y = 1.0;
     var INITIAL_CURL_PX = 22;  // visible grab immediately on touch
-    var AUTO_PULL_RATIO = 0.82; // latched turn continues most of the way across automatically
     var TOOLBAR_STRIP_PX = 0; // full reader surface is eligible; toolbar itself is layered above us
-    var AUTO_GLIDE_MS = 170;   // smooth continuation after the tiny swipe commits
 
     function pageForQuadrant(wantRight){
       try{
@@ -4783,41 +4781,6 @@ window.gfPdfLibraryReady.catch(function(){});
       }
     }
 
-    function startLatchedAutoPull(g){
-      if(!g || g.autoPullStarted) return;
-      g.autoPullStarted = true;
-
-      var startTime = performance.now();
-      var startX = g.lastVirtualX;
-      if(typeof startX !== 'number') startX = g.virtualStartX;
-
-      var targetX = g.virtualStartX +
-        (g.wantRight ? -1 : 1) * (g.pageW * AUTO_PULL_RATIO);
-
-      function glide(now){
-        if(!g || g.finished) return;
-
-        var p = Math.max(0,Math.min(1,(now-startTime)/AUTO_GLIDE_MS));
-        // smoothstep gives the page a natural acceleration/deceleration
-        var eased = p*p*(3-2*p);
-        var x = startX + (targetX-startX)*eased;
-
-        // Keep the curl aligned with the user's vertical pull position.
-        var y = g.virtualStartY + (g.lastY-g.startY) * DRAG_GAIN_Y;
-
-        try{
-          g.page.flip('_eventMove', syntheticTouchEvent(x,y));
-          g.lastVirtualX = x;
-        }catch(err){}
-
-        if(p < 1 && !g.finished){
-          g.autoPullRaf = requestAnimationFrame(glide);
-        }
-      }
-
-      g.autoPullRaf = requestAnimationFrame(glide);
-    }
-
     function moveQuadrantTurn(e){
       var g = quadrantGesture;
       if(!g || g.pointerId !== e.pointerId) return;
@@ -4847,7 +4810,7 @@ window.gfPdfLibraryReady.catch(function(){});
           return;
         }
 
-        // The very first tiny intentional stroke is enough to commit.
+        // A deliberate six-pixel pull commits; speed and hold time do not matter.
         g.committed = true;
 
         var firstVX = g.virtualStartX + dx * DRAG_GAIN_X;
@@ -4858,15 +4821,15 @@ window.gfPdfLibraryReady.catch(function(){});
           g.lastVirtualX = firstVX;
         }catch(err){}
 
-        startLatchedAutoPull(g);
+        // Hold the curl under the finger; release completes the turn.
 
         e.preventDefault();
         e.stopPropagation();
         return;
       }
 
-      // Once active, keep the visible curl following the finger while the
-      // existing latched auto-glide continues to carry the page across.
+      // Once active, follow the finger for as long as it remains down.
+      // There is no hold timeout, velocity requirement or automatic glide.
       var vx = g.virtualStartX + dx * DRAG_GAIN_X;
       var vy = g.virtualStartY + dy * DRAG_GAIN_Y;
 
