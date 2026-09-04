@@ -4940,13 +4940,8 @@ window.gfPdfLibraryReady.catch(function(){});
             try{ cancelAnimationFrame(g.autoPullRaf); }catch(e){}
           }
 
-          var finishX = g.virtualStartX +
-            (g.wantRight ? -1 : 1) * (g.pageW * 0.90);
-          var finishY = g.virtualStartY + totalDy * DRAG_GAIN_Y;
-
-          try{
-            g.page.flip('_eventMove', syntheticTouchEvent(finishX,finishY));
-          }catch(e){}
+          // Keep the last live curl position. turnPage() starts its animation
+          // from fd.point; moving it here would visibly jump at finger release.
 
           // Commit the target page in Turn.js BEFORE asking it to finish
           // the curl. This is what its native release handler does internally.
@@ -5030,6 +5025,14 @@ window.gfPdfLibraryReady.catch(function(){});
 
       // Turn.js 3 also listens for touch events. Stop those from starting a
       // second competing gesture when our full-screen layer owns the touch.
+      ['touchmove','touchend'].forEach(function(type){
+        quadrantOverlay.addEventListener(type, function(e){
+          // Pointer handlers own the curl. Native touch coordinates must not
+          // overwrite the final drag point or release the same page twice.
+          e.preventDefault();
+          e.stopPropagation();
+        }, {capture:true,passive:false});
+      });
       quadrantOverlay.addEventListener('touchstart', function(e){
         if(quadrantGesture){
           e.preventDefault();
@@ -6929,4 +6932,4 @@ window.gfPdfLibraryReady.catch(function(){});
   // A stalled image request must not prevent access to the reader.
   setTimeout(begin,5000);
 })();
-  </script>
+</script>
