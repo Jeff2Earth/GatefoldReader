@@ -100,8 +100,6 @@ Third-party libraries remain subject to their own licenses.
       <button id="gf-toolbar-settings" type="button" aria-label="Reader settings" style="
         width:36px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.35);
         background:rgba(255,255,255,.05);color:var(--gilt);font-size:18px;line-height:1;">⚙</button>
-      <button id="gf-toolbar-close" aria-label="Close menu" style="width:34px;height:32px;border-radius:14px;border:1px solid rgba(198,161,91,.3);
-        background:rgba(255,255,255,.05);color:var(--gilt);">×</button>
     </div>
   </div>
 
@@ -5326,7 +5324,6 @@ Third-party libraries remain subject to their own licenses.
     var toolbarEl = document.getElementById('gf-toolbar');
     var topHitEl = document.getElementById('gf-top-hit');
     var appleToolbarHandle = document.getElementById('gf-apple-toolbar-handle');
-    var toolbarClose = document.getElementById('gf-toolbar-close');
     var toolbarRef = document.getElementById('gf-toolbar-ref');
     var toolbarGo = document.getElementById('gf-toolbar-go');
     var toolbarIndex = document.getElementById('gf-toolbar-index');
@@ -5978,7 +5975,6 @@ Third-party libraries remain subject to their own licenses.
       settingsPanel.addEventListener(type,function(e){ e.stopPropagation(); },{passive:false});
     });
 
-    toolbarClose.addEventListener('click', closeToolbar);
 
     // ---------- lazy Bible Book / Chapter / Verse index ----------
     // Nothing here runs during startup, EPUB loading, pagination, resize,
