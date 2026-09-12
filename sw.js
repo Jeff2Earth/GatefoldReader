@@ -1,54 +1,6 @@
+const CACHE = 'gatefold-v4';
 
-const SHARE_CACHE = 'gatefold-incoming-epub-v1';
-const SHARE_URL = new URL('./share-book', self.registration.scope);
-const INCOMING_URL = new URL('./incoming-epub/', self.registration.scope);
-
-async function receiveBook(request) {
-  try {
-    const form = await request.formData();
-    const file = form.getAll('book').find(
-      f => typeof f !== 'string' && /\.epub$/i.test(f.name || '')
-    );
-
-    if (!file) {
-      return new Response('Please share an EPUB file.', { status: 400 });
-    }
-
-    const token = crypto.randomUUID();
-    const cache = await caches.open(SHARE_CACHE);
-
-    // Remove abandoned transfers older than a day.
-    for (const key of await cache.keys()) {
-      const old = await cache.match(key);
-      if (Date.now() - Number(old.headers.get('X-Saved-At') || 0) > 86400000) {
-        await cache.delete(key);
-      }
-    }
-
-    await cache.put(
-      new URL(token, INCOMING_URL).href,
-      new Response(file, {
-        headers: {
-          'Content-Type': 'application/epub+zip',
-          'X-Book-Name': encodeURIComponent(file.name),
-          'X-Saved-At': String(Date.now())
-        }
-      })
-    );
-
-    const target = new URL('./index.html', self.registration.scope);
-    target.searchParams.set('shared-book', token);
-    return Response.redirect(target.href, 303);
-  } catch (error) {
-    return new Response('Could not receive this book. Please use Load Book.', {
-      status: 500
-    });
-  }
-}
-
-const CACHE = 'gatefold-v4-share1';
-
-const LOCAL_ASSETs = [
+const LOCAL_ASSETS = [
   './',
   './index.html',
   './manifest.json',
@@ -68,30 +20,22 @@ const REMOTE_ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await cache.addAll(LOCAL_ASSETs);
+    await cache.addAll(LOCAL_ASSETS);
 
-    // One unavailable external library should not prevent installation.
     await Promise.allSettled(
       REMOTE_ASSETS.map(async url => {
-        const response = await fetch(url, { mode: 'cors' });
+        const response = await fetch(url, {mode:'cors'});
         if (response.ok) await cache.put(url, response.clone());
       })
     );
   })());
-
   self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-
-    await Promise.all(
-      keys
-        .filter(k => /^gatefold-v/.test(k) && k !== CACHE)
-        .map(k => caches.delete(k))
-    );
-
+    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -99,53 +43,58 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  if (
-    url.origin === SHARE_URL.origin &&
-    url.pathname === SHARE_URL.pathname &&
-    event.request.method === 'POST'
-  ) {
-    event.respondWith(receiveBook(event.request));
+  if (event.request.method === 'POST' && url.pathname.endsWith('/share-book')) {
+    event.respondWith((async () => {
+      try {
+        const formData = await event.request.formData();
+        const file = formData.get('book');
+        if (!file) throw new Error('No file in share');
+        const token = self.crypto.randomUUID();
+        const stashUrl = new URL('incoming-epub/' + token, self.registration.scope).href;
+        const headers = new Headers({
+          'Content-Type': file.type || 'application/epub+zip',
+          'X-Book-Name': encodeURIComponent(file.name || 'Shared.epub')
+        });
+        const cache = await caches.open(CACHE);
+        await cache.put(stashUrl, new Response(file, {headers}));
+        return Response.redirect('./index.html?shared-book=' + token, 303);
+      } catch (err) {
+        return Response.redirect('./index.html', 303);
+      }
+    })());
     return;
   }
 
-  if (
-    url.origin === INCOMING_URL.origin &&
-    url.pathname.startsWith(INCOMING_URL.pathname)
-  ) {
-    event.respondWith((async () => {
-      const cache = await caches.open(SHARE_CACHE);
-
-      if (event.request.method === 'DELETE') {
-        await cache.delete(url.href);
-        return new Response(null, { status: 204 });
-      }
-
-      return await cache.match(url.href) ||
-        new Response('Book not found', { status: 404 });
-    })());
-    return;
+  if (url.pathname.includes('/incoming-epub/')) {
+    if (event.request.method === 'GET') {
+      event.respondWith((async () => {
+        const cache = await caches.open(CACHE);
+        const cached = await cache.match(event.request);
+        return cached || new Response('Not found', {status: 404});
+      })());
+      return;
+    }
+    if (event.request.method === 'DELETE') {
+      event.respondWith((async () => {
+        const cache = await caches.open(CACHE);
+        await cache.delete(event.request);
+        return new Response(null, {status: 204});
+      })());
+      return;
+    }
   }
 
   if (event.request.method !== 'GET') return;
 
   event.respondWith((async () => {
-    const cached = await caches.match(event.request) ||
-      (
-        event.request.mode === 'navigate' &&
-        url.searchParams.has('shared-book')
-          ? await caches.match(
-              new URL('./index.html', self.registration.scope).href
-            )
-          : null
-      );
-
+    const cached = await caches.match(event.request);
     if (cached) return cached;
 
     try {
       const response = await fetch(event.request);
       const copy = response.clone();
       const cache = await caches.open(CACHE);
-      cache.put(event.request, copy).catch(() => {});
+      cache.put(event.request, copy).catch(()=>{});
       return response;
     } catch (err) {
       if (event.request.mode === 'navigate') {
