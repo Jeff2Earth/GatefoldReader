@@ -1502,52 +1502,24 @@ html.gf-apple-device body.gf-reading-full #gf-settings-panel{
 #gf-toolbar-right #gf-toolbar-close-all{flex:0 0 auto!important;min-width:44px!important;width:44px!important;min-height:40px!important;padding:4px!important;border:1px solid rgba(198,161,91,.4);border-radius:14px;background:rgba(255,255,255,.05);color:var(--gilt);font:12px/1.1 var(--font-ui)!important;white-space:normal!important;}
 </style>
 
-<style id="gf-tap-feedback-style">
-.gf-tap-selected-word {
-  outline: 2px solid red !important;
-  border-radius: 3px;
-}
-.gf-tap-selected-note {
-  color: red !important;
-  outline: 2px solid red !important;
-  border-radius: 3px;
-}
-</style>
-<script id="gf-tap-feedback-test">
+<script id="gf-tap-diagnostic">
 (function(){
-  var last=null, timer=null;
-
-  function clear(){
-    if(last) last.classList.remove('gf-tap-selected-word','gf-tap-selected-note');
-    last=null;
-    if(timer){clearTimeout(timer);timer=null;}
-  }
-
-  function mark(el, cls){
-    clear();
-    if(!el || !el.classList) return;
-    last=el;
-    el.classList.add(cls);
-    timer=setTimeout(clear,1600);
-  }
-
-  document.addEventListener('pointerdown', function(e){
-    var el=e.target && e.target.closest ? e.target.closest('[data-gf-note]');
-    if(el){
-      mark(el,'gf-tap-selected-note');
-      return;
-    }
-
-    /*
-      Visual-only feedback for existing word/Strong's handlers.
-      This does not replace or intercept the existing click logic.
-    */
+  document.addEventListener('pointerdown',function(e){
     var t=e.target;
     if(t && t.nodeType===3) t=t.parentElement;
-    if(t && t.closest){
-      var word=t.closest('[data-strong],[data-gf-strong],.strongs-word,.gf-word,[data-word]');
-      if(word) mark(word,'gf-tap-selected-word');
+    if(!t) return;
+    var info={
+      tag:t.tagName,
+      id:t.id||"",
+      className:typeof t.className==="string"?t.className:"",
+      data:{}
+    };
+    if(t.attributes){
+      Array.from(t.attributes).forEach(function(a){
+        if(a.name.indexOf("data-")===0) info.data[a.name]=a.value;
+      });
     }
-  }, {capture:true});
+    console.log("Gatefold TAP TARGET:",info);
+  },true);
 })();
 </script>
