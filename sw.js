@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v7';
+const CACHE = 'gatefold-v6';
 
 const LOCAL_ASSETS = [
   './',
