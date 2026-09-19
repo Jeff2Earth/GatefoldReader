@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v6';
+const CACHE = 'gatefold-v7-bookshelf';
 
 const LOCAL_ASSETS = [
   './',
@@ -22,22 +22,31 @@ self.addEventListener('install', event => {
     const cache = await caches.open(CACHE);
     await cache.addAll(LOCAL_ASSETS);
 
-    // Cache each external library independently so one temporary CDN failure
-    // does not prevent the PWA itself from installing.
+    // Cache external libraries individually so one temporary failure
+    // does not prevent Gatefold Reader from installing.
     await Promise.allSettled(
       REMOTE_ASSETS.map(async url => {
-        const response = await fetch(url, {mode:'cors'});
-        if (response.ok) await cache.put(url, response.clone());
+        const response = await fetch(url, { mode: 'cors' });
+        if (response.ok) {
+          await cache.put(url, response.clone());
+        }
       })
     );
   })());
+
   self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+
+    await Promise.all(
+      keys
+        .filter(key => key !== CACHE)
+        .map(key => caches.delete(key))
+    );
+
     await self.clients.claim();
   })());
 });
@@ -45,21 +54,38 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
+  // Do not cache the online bookshelf, cover images, or large EPUB files.
+  const requestUrl = new URL(event.request.url);
+
+  if (
+    /^(script\.google\.com|script\.googleusercontent\.com|drive\.google\.com|drive\.usercontent\.google\.com)$/
+      .test(requestUrl.hostname)
+  ) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   event.respondWith((async () => {
     const cached = await caches.match(event.request);
-    if (cached) return cached;
+
+    if (cached) {
+      return cached;
+    }
 
     try {
       const response = await fetch(event.request);
       const copy = response.clone();
       const cache = await caches.open(CACHE);
-      cache.put(event.request, copy).catch(()=>{});
+
+      cache.put(event.request, copy).catch(() => {});
+
       return response;
-    } catch (err) {
+    } catch (error) {
       if (event.request.mode === 'navigate') {
         return caches.match('./index.html');
       }
-      throw err;
+
+      throw error;
     }
   })());
 });
