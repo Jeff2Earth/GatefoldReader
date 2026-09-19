@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v8-drive-api';
+const CACHE = 'gatefold-v9-source-grid';
 
 const LOCAL_ASSETS = [
   './',
@@ -22,7 +22,7 @@ self.addEventListener('install', event => {
     const cache = await caches.open(CACHE);
     await cache.addAll(LOCAL_ASSETS);
 
-    // Cache external libraries individually so one temporary failure
+    // Cache external libraries independently so one temporary failure
     // does not prevent Gatefold Reader from installing.
     await Promise.allSettled(
       REMOTE_ASSETS.map(async url => {
@@ -55,7 +55,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
-  // Never cache the online bookshelf, covers, or large EPUB transfers.
+  // Never cache the bookshelf, cover images, or large EPUB transfers.
   const requestUrl = new URL(event.request.url);
 
   if (
