@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v7-bookshelf';
+const CACHE = 'gatefold-v8-drive-api';
 
 const LOCAL_ASSETS = [
   './',
@@ -27,6 +27,7 @@ self.addEventListener('install', event => {
     await Promise.allSettled(
       REMOTE_ASSETS.map(async url => {
         const response = await fetch(url, { mode: 'cors' });
+
         if (response.ok) {
           await cache.put(url, response.clone());
         }
@@ -54,11 +55,11 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
-  // Do not cache the online bookshelf, cover images, or large EPUB files.
+  // Never cache the online bookshelf, covers, or large EPUB transfers.
   const requestUrl = new URL(event.request.url);
 
   if (
-    /^(script\.google\.com|script\.googleusercontent\.com|drive\.google\.com|drive\.usercontent\.google\.com)$/
+    /^(script\.google\.com|script\.googleusercontent\.com|drive\.google\.com|drive\.usercontent\.google\.com|www\.googleapis\.com)$/
       .test(requestUrl.hostname)
   ) {
     event.respondWith(fetch(event.request));
