@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v11-fast-bookshelf';
+const CACHE = 'gatefold-v12-load-menu';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
