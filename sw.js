@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v9-source-grid';
+const CACHE = 'gatefold-v10-library-card-reset';
 
 const LOCAL_ASSETS = [
   './',
