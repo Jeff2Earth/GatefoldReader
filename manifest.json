@@ -42,7 +42,7 @@
         {
           "name": "book",
           "accept": [
-            ".epub",
+          
             "application/epub+zip",
             "application/octet-stream"
           ]
