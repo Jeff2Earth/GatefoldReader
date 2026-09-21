@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v12-load-menu';
+const CACHE = 'gatefold-v18-no-fullscreen-api';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
