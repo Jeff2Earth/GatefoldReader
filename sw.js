@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v29-even-ending-built-in';
+const CACHE = 'gatefold-v30-louder-cover-close';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
