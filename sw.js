@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v16-sticky-immersive-touch';
+const CACHE = 'gatefold-v17-resize-guard-load-fix';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
