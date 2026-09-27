@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v59- bookmark335';
+const CACHE = 'gatefold-v59- bookmark5';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
