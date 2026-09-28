@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v56-shelf-searchV12';
+const CACHE = 'gatefold-v56-shelf-searchV242';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
