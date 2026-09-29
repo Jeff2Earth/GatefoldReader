@@ -25,10 +25,11 @@
   ],
   "file_handlers": [
     {
-      "action": "./index.html",
+      "action": "./",
       "accept": {
-        "application/epub+zip": [
-                  ]
+        "application/epub+zip": [".epub"],
+        "application/pdf": [".pdf"],
+        "text/plain": [".txt"]
       },
       "launch_type": "single-client"
     }
@@ -42,8 +43,8 @@
         {
           "name": "book",
           "accept": [
-          
             "application/epub+zip",
+            "application/pdf",
             "application/octet-stream"
           ]
         }
