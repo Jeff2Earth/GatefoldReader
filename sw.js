@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v4.3AP-shelf-Speed BumpV1APL';
+const CACHE = 'gatefold-v4.3AP-shelf-Speed BumpVPL';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
