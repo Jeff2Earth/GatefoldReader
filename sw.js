@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v4.3AP-shelf- speed scroll V2 Adjustspeed';
+const CACHE = 'gatefold-v43-epub-open-1';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
