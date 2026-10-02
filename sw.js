@@ -1,5 +1,13 @@
-const CACHE = 'gatefold-v43-epub-open-1 take V7';
+const CACHE = 'gatefold-v43-share-fix-1';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
+
+const pendingShares = new Map();
+
+function generateUUID() {
+  return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, function(c) {
+    return (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16);
+  });
+}
 
 const APP_SHELL = [
   './',
@@ -33,12 +41,54 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
+  const requestUrl = new URL(request.url);
+
+  if (request.method === 'POST' && requestUrl.pathname.endsWith('/share-book')) {
+    event.respondWith((async () => {
+      try {
+        const formData = await request.formData();
+        const file = formData.get('book');
+        if (!file || !(file instanceof File)) return new Response('No file', {status: 400});
+        const token = generateUUID();
+        pendingShares.set(token, {file, name: file.name});
+        return Response.redirect(new URL('./index.html?shared-book=' + token, requestUrl.href).href, 303);
+      } catch(e) {
+        return new Response('Share failed', {status: 500});
+      }
+    })());
+    return;
+  }
+
+  if (requestUrl.pathname.includes('/incoming-epub/')) {
+    const token = requestUrl.pathname.split('/incoming-epub/')[1];
+    if (request.method === 'GET') {
+      event.respondWith((async () => {
+        const pending = pendingShares.get(token);
+        if (!pending) return new Response('Not found', {status: 404});
+        return new Response(pending.file, {
+          status: 200,
+          headers: {
+            'Content-Type': pending.file.type || 'application/epub+zip',
+            'X-Book-Name': encodeURIComponent(pending.name || 'Shared.epub')
+          }
+        });
+      })());
+      return;
+    }
+    if (request.method === 'DELETE') {
+      event.respondWith((async () => {
+        pendingShares.delete(token);
+        return new Response(null, {status: 204});
+      })());
+      return;
+    }
+  }
 
   if (request.method !== 'GET') {
     return;
   }
 
-  const requestUrl = new URL(request.url);
+  const requestUrlForCache = requestUrl;
 
   /*
    * Cache only the small Google Drive cover thumbnails.
@@ -46,8 +96,8 @@ self.addEventListener('fetch', event => {
    * is downloaded quietly in the background.
    */
   if (
-    requestUrl.hostname === 'drive.google.com' &&
-    requestUrl.pathname === '/thumbnail'
+    requestUrlForCache.hostname === 'drive.google.com' &&
+    requestUrlForCache.pathname === '/thumbnail'
   ) {
     event.respondWith(
       (async () => {
@@ -76,10 +126,10 @@ self.addEventListener('fetch', event => {
    * or large Google Drive EPUB downloads.
    */
   if (
-    requestUrl.hostname === 'script.google.com' ||
-    requestUrl.hostname.endsWith('.googleusercontent.com') ||
-    requestUrl.hostname === 'www.googleapis.com' ||
-    requestUrl.hostname === 'drive.google.com'
+    requestUrlForCache.hostname === 'script.google.com' ||
+    requestUrlForCache.hostname.endsWith('.googleusercontent.com') ||
+    requestUrlForCache.hostname === 'www.googleapis.com' ||
+    requestUrlForCache.hostname === 'drive.google.com'
   ) {
     event.respondWith(fetch(request));
     return;
