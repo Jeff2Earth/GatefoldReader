@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v43-share-fixkjvbookshelfcaaaap27';
+const CACHE = 'gatefold-v43-share-fixkjvbookshelaaap27';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const pendingShares = new Map();
