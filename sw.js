@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v410-leanandmean-';
+const CACHE = 'gatefold-v410-lean-';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const pendingShares = new Map();
