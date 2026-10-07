@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v410-pageedgingV333-';
+const CACHE = 'gatefold-v410-pageedgingV3-';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v72';
 
 const pendingShares = new Map();
