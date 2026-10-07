@@ -1,5 +1,5 @@
-const CACHE = 'gatefold-v410-pageedgingV3-';
-const COVER_CACHE = 'gatefold-cover-thumbnails-v72';
+const CACHE = 'gatefold-v44-soft-edges-1007b';
+const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const pendingShares = new Map();
 
@@ -12,7 +12,8 @@ function generateUUID() {
 const APP_SHELL = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  './KJV%20Strongs.epub'
 ];
 
 self.addEventListener('install', event => {
