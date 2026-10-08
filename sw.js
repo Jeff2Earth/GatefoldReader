@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v44-ba
+const CACHE = 'gatefold-v44334-ba
   lp7';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
