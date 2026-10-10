@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.3-printpress';
+const CACHE = 'gatefold-V10.3-printpressV2';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const pendingShares = new Map();
