@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.4  CoverArtHomepage Version 3.8747';
+const CACHE = 'gatefold-V10.4  CoverArtHomepage Version 4.76';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
