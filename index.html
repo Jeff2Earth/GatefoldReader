@@ -1,4 +1,4 @@
-<style id="gf-early-css">#gf-intro{position:fixed;inset:0;z-index:999999;background:#000}html:not(.gf-quick-resume):not(.gf-intro-done),html:not(.gf-quick-resume):not(.gf-intro-done) body{background:#000!important}</style>
+<style id="gf-early-css">#gf-intro{position:fixed;inset:0;z-index:999999;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}#gf-intro img{--r:1.4898;position:absolute;width:min(100vw,calc(100vh * var(--r)));aspect-ratio:var(--r);object-fit:cover;opacity:0}#gf-intro img:nth-child(2){--r:1.3339}html:not(.gf-quick-resume):not(.gf-intro-done),html:not(.gf-quick-resume):not(.gf-intro-done) body{background:#000!important}</style>
 <style id="gf-boot-css">html.gf-boot #flipbook{opacity:0!important;visibility:hidden!important}html.gf-boot-fade #flipbook{transition:opacity .22s ease}</style>
 <script id="gf-boot-js">(function(){var h=document.documentElement,done=false;h.classList.add("gf-boot");
 function end(){if(done)return;done=true;try{mo.disconnect()}catch(e){}h.classList.add("gf-boot-fade");requestAnimationFrame(function(){requestAnimationFrame(function(){h.classList.remove("gf-boot");setTimeout(function(){h.classList.remove("gf-boot-fade")},400)})})}
@@ -319,7 +319,7 @@ Third-party libraries remain subject to their own licenses.
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <div style="min-width:0;padding-right:10px;">
         <strong style="display:block;color:var(--gilt);font-size:16px;letter-spacing:.03em;">Gatefold Reader</strong>
-        <span style="display:block;margin-top:4px;font-size:12px;color:#eee7d5;">Version 4.1.6 · The Classic Edition · build 1010q</span>
+        <span style="display:block;margin-top:4px;font-size:12px;color:#eee7d5;">Version 4.1.6 · The Classic Edition · build 1010s</span>
       </div>
       <button id="gf-settings-close" type="button" aria-label="Close settings" style="width:36px;height:36px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:#eee7d5;font-size:18px;">×</button>
     </div>
@@ -3187,7 +3187,7 @@ background:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAsHCAoIBw
 })();
 </script>
 <script id="gf-dbltap-js">
-/* Double-tap the middle of the page: drop the menu down.
+/* Double-tap the middle of the page: open the home menu (tap the top edge for the dropdown).
    Ignores links, buttons, Strong's / footnote markers, panels and drags. */
 (function(){
  var bar=document.getElementById("gf-toolbar");if(!bar)return;
@@ -3210,7 +3210,7 @@ background:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAsHCAoIBw
  window.addEventListener("pointerdown",function(e){
   down=null;
   if(e.pointerType==="mouse"&&e.button!==0)return;
-  if(window.gfModalOpen||bar.classList.contains("open")||Date.now()-closedAt<700){last=null;return}
+  if(window.gfModalOpen||bar.classList.contains("open")||Date.now()-closedAt<700||(window.gfHomeEl&&window.gfHomeEl.classList.contains("on"))){last=null;return}
   if(e.clientY<90||!okTarget(e.target)){last=null;return}
   try{var sel=window.getSelection&&String(window.getSelection());if(sel){last=null;return}}catch(x){}
   down={x:e.clientX,y:e.clientY,t:Date.now()}
@@ -3223,7 +3223,7 @@ background:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAsHCAoIBw
   if(f<.25||f>.75){last=null;return}
   if(last&&now-last.t<380&&Math.hypot(e.clientX-last.x,e.clientY-last.y)<45){
    last=null;
-   if(typeof window.gfOpenReservedToolbar==="function")window.gfOpenReservedToolbar()
+   if(typeof window.gfOpenHome==="function")window.gfOpenHome();else if(typeof window.gfOpenReservedToolbar==="function")window.gfOpenReservedToolbar()
   }else last={x:e.clientX,y:e.clientY,t:now}
  },{capture:true,passive:true});
 })();
@@ -3271,6 +3271,8 @@ background:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAsHCAoIBw
 @keyframes gfGoPulse{0%,100%{box-shadow:0 0 16px rgba(255,190,80,.15)}50%{box-shadow:0 0 30px rgba(255,200,90,.42)}}
 #gf-home.fading{opacity:0;transition:opacity 1.6s ease;pointer-events:none}
 #gf-home.nobook .x{display:none}
+body.gf-nobook #gf-toolbar-brand,body.gf-from-home #gf-toolbar-brand{display:none!important}
+body:has(#gf-intro) #gf-home{z-index:999000!important}
 #gf-home .x{position:absolute;top:max(12px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));width:46px;height:46px;border-radius:50%;border:1px solid rgba(232,200,130,.6);background:rgba(14,10,6,.7);color:#f6e7bd;font:28px/44px sans-serif;text-align:center;padding:0;cursor:pointer}
 </style>
 <script id="gf-home-js">
@@ -3307,6 +3309,7 @@ background:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAsHCAoIBw
  document.addEventListener("keydown",function(e){if(e.key==="Escape")close()});
  x.addEventListener("click",function(){close()});
  function viaToolbar(id){
+  document.body.classList.add("gf-from-home");fromHomeAt=Date.now();
   close();
   setTimeout(function(){
    if(typeof window.gfOpenReservedToolbar==="function")window.gfOpenReservedToolbar();
@@ -3322,7 +3325,7 @@ background:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAsHCAoIBw
  brand.setAttribute("role","button");brand.setAttribute("aria-label","Open Gatefold home");
 
  /* Start screen: while no book is loaded, this menu IS the start screen. */
- var loadingUntil=0,idle=0,poll=null;
+ var loadingUntil=0,idle=0,poll=null,fromHomeAt=0;
  function bump(){loadingUntil=Date.now()+8000}
  document.addEventListener("change",function(e){if(e.target&&e.target.type==="file")bump()},true);
  document.addEventListener("click",function(e){if(e.target&&e.target.closest&&e.target.closest("#gf-saved-library,#gf-bookshelf,#gf-online-sources,#gf-load-menu"))bump()},true);
@@ -3341,14 +3344,18 @@ background:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAsHCAoIBw
  function hasLast(){try{return !!localStorage.getItem("gatefold.lastBookId.v3")}catch(e){return false}}
  function tick(){
   var welcome=!!document.querySelector(".gf-welcome"),on=ov.classList.contains("on");
+  document.body.classList.toggle("gf-nobook",welcome&&!hasLast());
+  if(document.body.classList.contains("gf-from-home")&&Date.now()-fromHomeAt>1500){var tb0=document.getElementById("gf-toolbar");if(!tb0||!tb0.classList.contains("open"))document.body.classList.remove("gf-from-home")}
   if(on){
    if(!welcome&&!ov.classList.contains("fading")&&ov.classList.contains("nobook")){ov.classList.add("fading");setTimeout(function(){ov.classList.remove("on","fading","nobook")},1700)}
    idle=0;return
   }
-  if(!welcome||hasLast()||busy()){idle=0;return}
-  if(++idle>=3){idle=0;open(true)}
+  if(!welcome||hasLast()){idle=0;return}
+  if(document.getElementById("gf-intro")){open(true);return}
+  if(busy()){idle=0;return}
+  if(++idle>=8){idle=0;open(true)}
  }
- poll=setInterval(tick,400);
+ poll=setInterval(tick,150);tick();
 })();
 </script>
 <script id="gf-intro-done-js">(function(){var h=document.documentElement;if(window.gfQuickResume||!document.getElementById("gf-intro")){h.classList.add("gf-intro-done");return}var mo=new MutationObserver(function(){if(!document.getElementById("gf-intro")){mo.disconnect();h.classList.add("gf-intro-done")}});mo.observe(document.body,{childList:true});setTimeout(function(){h.classList.add("gf-intro-done")},30000)})();</script>
