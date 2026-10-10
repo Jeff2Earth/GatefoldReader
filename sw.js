@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.4   Version fairy dust new GUI 690';
+const CACHE = 'gatefold-V10.4   Version fairy dust new GUI 98760';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
