@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v44334-iPadInstalltutorialV2c9vers1';
+const CACHE = 'gatefold-V10.2-leanandmean';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const pendingShares = new Map();
