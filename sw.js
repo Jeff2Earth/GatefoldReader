@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.4   Version  1.0  tutorial J2343';
+const CACHE = 'gatefold-V10.4   Version  1.0  Top touch Home screen V3';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
