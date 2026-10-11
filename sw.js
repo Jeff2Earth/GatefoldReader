@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.4 Home Menu GUI 4.4 PerfectV4  Soundscape';
+const CACHE = 'gatefold-V10.4 Home Menu GUI 4.4 PerfectV4  Xtraoundscape';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
