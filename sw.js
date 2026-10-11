@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.4   Version  1.0  Home Menu GUI is Base V3';
+const CACHE = 'gatefold-V10.4   Version  1.0  Home Menu GUI is Base V2';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
