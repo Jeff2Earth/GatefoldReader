@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.5 Home Menu GUI 4.5 Dictnrypageflip';
+const CACHE = 'gatefold-V10.5 Home Menu 4.6 Dictnrypageflip';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
