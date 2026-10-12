@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.5 Home Menu 4.7 pageswipe';
+const CACHE = 'gatefold-V10.5 Home  4.7 pageswipe';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
