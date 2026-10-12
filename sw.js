@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.5 Home Menu GUI 4.4 Great Sounds8Dicti8naty';
+const CACHE = 'gatefold-V10.5 Home Menu GUI 4.5 Dicti8naty';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
