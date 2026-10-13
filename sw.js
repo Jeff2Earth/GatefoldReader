@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.5 Home  4.7 page';
+const CACHE = 'gatefold-V10.5 Home  4.7 page sound v7';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
