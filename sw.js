@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.5 pagesound 7.0 flip page ';
+const CACHE = 'gatefold-V10.5 pagesound 7.099 flip page ';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
