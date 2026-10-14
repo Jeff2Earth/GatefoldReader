@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.5 pagesound 7.099 Magical Menu V3';
+const CACHE = 'gatefold-V10.5 pagesound 7.099 Magical Menu w quotes V3';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
