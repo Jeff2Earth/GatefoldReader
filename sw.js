@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-V10.5 Magical Menu w edgg menu V4.4';
+const CACHE = 'gatefold-V10.5 Magical Menu w edgg menll V4.4';
 const COVER_CACHE = 'gatefold-cover-thumb-v1';
 
 const pendingShares = new Map();
