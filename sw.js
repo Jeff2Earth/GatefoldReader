@@ -1,5 +1,5 @@
-const CACHE = 'gatefold-V10.6 Mag V5.8lll';
-const COVER_CACHE = 'gatefold-cover-thumb-v897';
+const CACHE = 'gatefold-V10.6 Mag V5.ll';
+const COVER_CACHE = 'gatefold-cover-thumb-v895857575757';
 
 const pendingShares = new Map();
 
