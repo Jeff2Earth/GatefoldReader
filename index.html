@@ -324,7 +324,7 @@ Third-party libraries remain subject to their own licenses.
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <div style="min-width:0;padding-right:10px;">
         <strong style="display:block;color:var(--gilt);font-size:16px;letter-spacing:.03em;">Gatefold Reader</strong>
-        <span style="display:block;margin-top:4px;font-size:12px;color:#eee7d5;">Version 4.1.6 · The Classic Edition · build 1059t</span>
+        <span style="display:block;margin-top:4px;font-size:12px;color:#eee7d5;">Version 4.1.6 · The Classic Edition · build 1060t</span>
       </div>
       <button id="gf-settings-close" type="button" aria-label="Close settings" style="width:36px;height:36px;border-radius:12px;border:1px solid rgba(198,161,91,.3);background:rgba(255,255,255,.05);color:#eee7d5;font-size:18px;">×</button>
     </div>
@@ -4989,7 +4989,7 @@ body.gf-dict-on .tpage{-webkit-user-select:none;user-select:none;-webkit-touch-c
 
   /* Corner hint labels */
   var clabEls=[];
-  [{id:'gfm-clab-tl',t:'Index',fn:function(){var b=document.getElementById('gf-toolbar-index');if(b)b.click();}},
+  [{id:'gfm-clab-tl',t:'Index',fn:function(){try{window.gfCloseHome&&window.gfCloseHome();}catch(x){}var b=document.getElementById('gf-toolbar-index');if(b)b.click();try{window.gfCloseHome&&window.gfCloseHome();}catch(x){}}},
    {id:'gfm-clab-tr',t:'Search',fn:function(){var b=document.getElementById('gf-toolbar-search');if(b)b.click();}},
    {id:'gfm-clab-bl',t:'Pages',fn:function(){try{window.gfPagesBarShow&&window.gfPagesBarShow();}catch(x){}}},
    {id:'gfm-clab-br',t:'Bookmark',fn:function(){try{window.gfBookmarkToggle&&window.gfBookmarkToggle();}catch(x){}}}
@@ -5589,7 +5589,6 @@ body #gf-search-bar{border-bottom:none!important;border-top:1px solid rgba(198,1
         "#gf-toolbar,#gf-bible-index-panel,#gf-settings-panel,#gf-search-bar,"+
         "#gf-load-menu,#gf-bookshelf,#gf-online-sources,#gf-saved-library,"+
         "#gf-prepare-overlay,#gf-busy,#gf-home,#gf-tour,"+
-        "#gfm-clab-tl,#gfm-clab-tr,#gfm-clab-bl,#gfm-clab-br,"+
         "button,input,select,a,[role=button],[role=dialog],[role=menu]"
       )){
         /* Bottom-right: bookmark tabs are buttons but they ARE the target — allow them */
