@@ -1,4 +1,4 @@
-const CACHE = 'gatefold-v30-footnote-g82485694747555';
+const CACHE = 'gatefold-v30-footnote-g824856947363636747555';
 const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
 
 const APP_SHELL = [
