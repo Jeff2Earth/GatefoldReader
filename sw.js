@@ -1,17 +1,18 @@
-const CACHE = 'gatefold-v32-footnote-g846242424797969235';
-const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
+/*
+ * sw.js — Gatefold Reader service worker
+ *
+ * index.html is intentionally NOT cached: it is always fetched fresh from
+ * the network so new builds go live immediately without touching this file.
+ * Only cover thumbnails and the manifest get cached.
+ */
 
-const APP_SHELL = [
-  './',
-  './index.html',
-  './manifest.json'
-];
+const COVER_CACHE = 'gatefold-cover-thumbnails-v1';
+const SHELL_CACHE = 'gatefold-shell-v1';
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(APP_SHELL))
+    caches.open(SHELL_CACHE).then(cache => cache.addAll(['./manifest.json']))
   );
-
   self.skipWaiting();
 });
 
@@ -19,13 +20,11 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-
       await Promise.all(
         keys
-          .filter(key => key !== CACHE && key !== COVER_CACHE)
+          .filter(key => key !== SHELL_CACHE && key !== COVER_CACHE)
           .map(key => caches.delete(key))
       );
-
       await self.clients.claim();
     })()
   );
@@ -41,9 +40,24 @@ self.addEventListener('fetch', event => {
   const requestUrl = new URL(request.url);
 
   /*
-   * Cache only the small Google Drive cover thumbnails.
-   * The saved thumbnail appears immediately while a fresh copy
-   * is downloaded quietly in the background.
+   * index.html — always fetch from network so every new build is live
+   * immediately. Fall back to cache only when offline.
+   */
+  if (
+    requestUrl.pathname === '/' ||
+    requestUrl.pathname.endsWith('/index.html')
+  ) {
+    event.respondWith(
+      fetch(request)
+        .then(response => response)
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  /*
+   * Cover thumbnails: stale-while-revalidate so they appear instantly
+   * and refresh in the background.
    */
   if (
     requestUrl.hostname === 'drive.google.com' &&
@@ -59,7 +73,6 @@ self.addEventListener('fetch', event => {
             if (response && response.ok) {
               cache.put(request, response.clone());
             }
-
             return response;
           })
           .catch(() => cachedCover);
@@ -67,13 +80,11 @@ self.addEventListener('fetch', event => {
         return cachedCover || freshCover;
       })()
     );
-
     return;
   }
 
   /*
-   * Never cache the live Apps Script catalog, Google API requests,
-   * or large Google Drive EPUB downloads.
+   * Never cache live API calls or large EPUB downloads.
    */
   if (
     requestUrl.hostname === 'script.google.com' ||
@@ -86,14 +97,13 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-   * Normal app files use the cache first.
+   * Everything else (manifest, etc.) — cache first.
    */
   event.respondWith(
     caches.match(request).then(cachedResponse => {
       if (cachedResponse) {
         return cachedResponse;
       }
-
       return fetch(request).then(networkResponse => {
         if (
           !networkResponse ||
@@ -102,13 +112,10 @@ self.addEventListener('fetch', event => {
         ) {
           return networkResponse;
         }
-
         const responseCopy = networkResponse.clone();
-
-        caches.open(CACHE).then(cache => {
+        caches.open(SHELL_CACHE).then(cache => {
           cache.put(request, responseCopy);
         });
-
         return networkResponse;
       });
     })
