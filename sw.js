@@ -2,7 +2,7 @@
    Gatefold Reader — Service Worker
    CHANGE THIS NUMBER every time you update index.html:
    ───────────────────────────────────────────────────────────── */
-const VERSION = 'v3457472729454';
+const VERSION = 'v34574727454';
 /* ─────────────────────────────────────────────────────────────── */
 
 const CACHE = 'gatefold-' + VERSION;
